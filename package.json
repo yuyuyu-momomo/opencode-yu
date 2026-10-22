@@ -1,0 +1,51 @@
+{
+  "name": "opencode-moyu",
+  "version": "0.1.0",
+  "description": "OpenCode 原生右侧栏小说阅读器",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./dist/server-v2.js",
+    "./tui": "./dist/tui-v2.js",
+    "./v1/tui": "./dist/tui.js",
+    "./v1/server": "./dist/server.js"
+  },
+  "files": [
+    "dist",
+    "books",
+    "install.sh",
+    "install.cmd",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22",
+    "opencode": ">=2.1.2 <3"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs",
+    "install:plugin": "node dist/install.mjs",
+    "uninstall:plugin": "node dist/install.mjs --remove",
+    "package:zip": "python3 scripts/package.py"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@babel/preset-typescript": "^7.28.0",
+    "@opencode-ai/plugin": "1.19.0",
+    "@opencode/plugin": "^2.1.2",
+    "@opencode/theme": "^2.1.2",
+    "@opentui/core": "0.4.5",
+    "@opentui/solid": "0.4.5",
+    "@types/node": "^22.0.0",
+    "babel-preset-solid": "1.9.12",
+    "cheerio": "^1.1.2",
+    "esbuild": "^0.25.0",
+    "https-proxy-agent": "^7.0.6",
+    "jsonc-parser": "^3.3.1",
+    "solid-js": "1.9.12",
+    "string-width": "^7.2.0",
+    "typescript": "^5.8.2"
+  }
+}

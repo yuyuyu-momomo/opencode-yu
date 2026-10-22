@@ -1,0 +1,35 @@
+OpenCode 摸鱼阅读 · 即插即用安装包
+
+需要：OpenCode 2.1.2 / 1.19.x 和 Node.js 22+（不需要 npm install）。
+
+WSL / Linux / macOS：
+  1. 解压 ZIP。
+  2. 在解压目录运行：bash install.sh
+  3. 重启 opencode，进入会话即可在右侧看小说。
+
+Windows 原生 OpenCode：
+  解压后双击 install.cmd，完成后重启 OpenCode。
+  如果 OpenCode 运行在 WSL 内，请使用上面的 WSL 安装方法。
+
+Alt+O  打开小说 / 书架
+Alt+←/→  上一页 / 下一页
+Alt+C  章节目录
+Alt+G  跳转进度
+Alt+M  立即隐藏 / 显示
+Alt+D  删除当前资料与续采缓存
+
+附原创示例，支持 TXT / Markdown，UTF-8 / GBK / UTF-16。
+自动保存阅读进度。终端建议至少 140 列、30 行。
+若侧栏未显示：Ctrl+X 后按 B，或 Ctrl+P 搜索 sidebar。
+
+直接对当前模型说“把这个小说目录链接抓到书架”，即可调用采集工具。
+正文、缓存和采集记录默认 AES-256-GCM 加密，阅读时解密。
+密钥独立保存在安装目录 keys/library.key，迁移时需要备份。
+
+安装器自动注册侧栏与模型工具，并备份已有配置，保留模型 provider 设置。
+安装后可以删除 ZIP 和解压目录。
+
+卸载：bash install.sh --remove
+也可运行安装结束时显示的卸载命令；小说及进度保留。
+
+详细说明见 README.md。

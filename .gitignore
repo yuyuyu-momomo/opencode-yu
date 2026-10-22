@@ -1,0 +1,9 @@
+node_modules/
+*.tgz
+books/*
+!books/夜班便利店.txt
+keys/
+*.key
+*.moyubook
+.moyu/
+*.moyu-backup-*
