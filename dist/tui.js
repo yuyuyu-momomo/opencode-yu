@@ -433,6 +433,7 @@ function paginate(text, width = 36, rows = 16) {
   for (let index = 0; index < lines.length; index += rows) {
     pages.push({ start: lines[index].start, text: lines.slice(index, index + rows).map((item) => item.text).join("\n") });
   }
+  while (pages.length > 1 && !pages.at(-1).text.trim()) pages.pop();
   return pages;
 }
 function pageAt(pages, offset) {
@@ -480,6 +481,7 @@ var tui = async (api, options) => {
     keyFile
   });
   await library.ready();
+  const collect = api.moyu?.collect;
   const [visible, setVisible] = createSignal(true);
   const [book, setBook] = createSignal();
   const [offset, setOffset] = createSignal(0);
@@ -568,6 +570,17 @@ var tui = async (api, options) => {
       }
     }));
   }
+  function promptCollection() {
+    dialog(() => _$createComponent(api.ui.DialogPrompt, {
+      title: "\u8BA9\u5F53\u524D\u6A21\u578B\u91C7\u96C6\u5C0F\u8BF4",
+      placeholder: "\u4F8B\u5982\uFF1A\u5FD8\u8BED\u7684\u51E1\u4EBA\u4FEE\u4ED9\u4F20\uFF0C\u5148\u91C7\u96C620\u7AE0\uFF1B\u4E5F\u53EF\u8F93\u5165\u76EE\u5F55\u94FE\u63A5",
+      onCancel: closeDialog,
+      onConfirm: (query) => {
+        closeDialog();
+        void collect?.(query);
+      }
+    }));
+  }
   async function shelf() {
     try {
       const items = await listBooks(booksDir, {
@@ -576,9 +589,13 @@ var tui = async (api, options) => {
       if (api.lifecycle.signal.aborted) return;
       dialog(() => _$createComponent(api.ui.DialogSelect, {
         title: "\u4E66\u67B6 \xB7 \u6478\u9C7C\u9605\u8BFB",
-        placeholder: "\u641C\u7D22\u4E66\u540D\uFF0C\u6216\u9009\u62E9\u300C\u6253\u5F00\u672C\u5730\u6587\u4EF6\u300D",
+        placeholder: "\u641C\u7D22\u4E66\u540D\uFF0C\u6216\u9009\u62E9\u91C7\u96C6 / \u6253\u5F00\u672C\u5730\u6587\u4EF6",
         get options() {
-          return [{
+          return [...collect ? [{
+            title: "\uFF0B \u8BA9\u5F53\u524D\u6A21\u578B\u91C7\u96C6\u5C0F\u8BF4\u2026",
+            value: "moyu:collect",
+            description: "\u8F93\u5165\u4E66\u540D\u3001\u4F5C\u8005\u6216\u76EE\u5F55\u94FE\u63A5"
+          }] : [], {
             title: "\uFF0B \u6253\u5F00\u672C\u5730\u6587\u4EF6\u2026",
             value: "",
             description: "\u8F93\u5165\u4EFB\u610F TXT \u6587\u4EF6\u8DEF\u5F84"
@@ -590,13 +607,19 @@ var tui = async (api, options) => {
         },
         onSelect: (item) => {
           closeDialog();
-          if (item.value) void open2(String(item.value));
+          if (item.value === "moyu:collect") promptCollection();
+          else if (item.value) void open2(String(item.value));
           else promptFile();
         }
       }));
     } catch {
       promptFile();
     }
+  }
+  function openMoyu() {
+    setVisible(true);
+    api.kv.set(prefix + "visible", true);
+    return shelf();
   }
   function chapters() {
     const current = book();
@@ -745,7 +768,6 @@ var tui = async (api, options) => {
       title: "\u6478\u9C7C\u9605\u8BFB\uFF1A\u663E\u793A / \u9690\u85CF",
       category: "Moyu \u9605\u8BFB",
       namespace: "palette",
-      slashName: "moyu",
       run: toggle
     }],
     bindings: [{
@@ -757,6 +779,11 @@ var tui = async (api, options) => {
   api.keymap.registerLayer({
     mode: "base",
     commands: [{
+      name: "moyu.open",
+      title: "\u6478\u9C7C\u9605\u8BFB\uFF1A\u6253\u5F00\u4E66\u67B6",
+      slashName: "moyu",
+      run: openMoyu
+    }, {
       name: "moyu.shelf",
       title: "\u6478\u9C7C\u9605\u8BFB\uFF1A\u4E66\u67B6 / \u6253\u5F00\u6587\u4EF6",
       slashName: "read",
@@ -807,7 +834,7 @@ var tui = async (api, options) => {
       cmd: "moyu.jump",
       desc: "\u8DF3\u8F6C\u8FDB\u5EA6"
     }, {
-      key: "alt+r",
+      key: "<leader>j",
       cmd: "moyu.size",
       desc: "\u8C03\u6574\u9605\u8BFB\u533A\u57DF\u5927\u5C0F"
     }, {
@@ -842,6 +869,8 @@ var tui = async (api, options) => {
     }
     onCleanup(() => viewport?.off("resized", measure));
     const theme = () => api.theme.current;
+    const gap = () => height() < 40 ? 0 : 1;
+    const chromeRows = () => 6 + gap() * 5;
     const percentage = () => page() === pages().length - 1 ? 100 : Math.floor(pages()[page()].start / (book()?.text.length || 1) * 100);
     return _$createComponent(Show, {
       get when() {
@@ -857,6 +886,8 @@ var tui = async (api, options) => {
         });
         _$insertNode(_el$2, _el$3);
         _$insertNode(_el$2, _el$6);
+        _$setProp(_el$2, "flexShrink", 0);
+        _$setProp(_el$2, "height", 1);
         _$setProp(_el$2, "flexDirection", "row");
         _$setProp(_el$2, "justifyContent", "space-between");
         _$insertNode(_el$3, _el$4);
@@ -879,10 +910,10 @@ var tui = async (api, options) => {
           },
           get fallback() {
             return (() => {
-              var _el$26 = _$createElement("text");
-              _$insert(_el$26, () => busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "Alt+O \u6253\u5F00\u672C\u5730\u5C0F\u8BF4");
-              _$effect((_$p) => _$setProp(_el$26, "fg", theme().textMuted, _$p));
-              return _el$26;
+              var _el$28 = _$createElement("text");
+              _$insert(_el$28, () => busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "Alt+O \u6253\u5F00\u672C\u5730\u5C0F\u8BF4");
+              _$effect((_$p) => _$setProp(_el$28, "fg", theme().textMuted, _$p));
+              return _el$28;
             })();
           },
           get children() {
@@ -890,6 +921,8 @@ var tui = async (api, options) => {
               var _el$0 = _$createElement("box"), _el$1 = _$createElement("text"), _el$10 = _$createElement("text");
               _$insertNode(_el$0, _el$1);
               _$insertNode(_el$0, _el$10);
+              _$setProp(_el$0, "flexShrink", 0);
+              _$setProp(_el$0, "height", 2);
               _$setProp(_el$1, "wrapMode", "none");
               _$setProp(_el$1, "onMouseDown", () => void shelf());
               _$insert(_el$1, () => book()?.title);
@@ -907,86 +940,97 @@ var tui = async (api, options) => {
               });
               return _el$0;
             })(), (() => {
-              var _el$11 = _$createElement("text");
-              _$setProp(_el$11, "wrapMode", "none");
-              _$insert(_el$11, () => pages()[page()].text);
+              var _el$11 = _$createElement("box"), _el$12 = _$createElement("text");
+              _$insertNode(_el$11, _el$12);
+              _$setProp(_el$11, "flexShrink", 0);
+              _$setProp(_el$12, "width", "100%");
+              _$setProp(_el$12, "height", "100%");
+              _$setProp(_el$12, "wrapMode", "none");
+              _$insert(_el$12, () => pages()[page()].text);
               _$effect((_p$) => {
-                var _v$3 = theme().text, _v$4 = rows();
-                _v$3 !== _p$.e && (_p$.e = _$setProp(_el$11, "fg", _v$3, _p$.e));
-                _v$4 !== _p$.t && (_p$.t = _$setProp(_el$11, "height", _v$4, _p$.t));
+                var _v$3 = rows(), _v$4 = rows(), _v$5 = theme().text;
+                _v$3 !== _p$.e && (_p$.e = _$setProp(_el$11, "height", _v$3, _p$.e));
+                _v$4 !== _p$.t && (_p$.t = _$setProp(_el$11, "minHeight", _v$4, _p$.t));
+                _v$5 !== _p$.a && (_p$.a = _$setProp(_el$12, "fg", _v$5, _p$.a));
                 return _p$;
               }, {
                 e: void 0,
-                t: void 0
+                t: void 0,
+                a: void 0
               });
               return _el$11;
             })(), (() => {
-              var _el$12 = _$createElement("box"), _el$13 = _$createElement("text"), _el$14 = _$createTextNode(` / `), _el$15 = _$createTextNode(` \u9875 \xB7 `), _el$16 = _$createTextNode(`%`), _el$17 = _$createElement("text");
-              _$insertNode(_el$12, _el$13);
-              _$insertNode(_el$12, _el$17);
-              _$setProp(_el$12, "flexDirection", "row");
-              _$setProp(_el$12, "justifyContent", "space-between");
+              var _el$13 = _$createElement("box"), _el$14 = _$createElement("box"), _el$15 = _$createElement("text"), _el$16 = _$createTextNode(` / `), _el$17 = _$createTextNode(` \u9875 \xB7 `), _el$18 = _$createTextNode(`%`), _el$19 = _$createElement("text"), _el$21 = _$createElement("box"), _el$22 = _$createElement("text"), _el$24 = _$createElement("text"), _el$26 = _$createElement("text");
               _$insertNode(_el$13, _el$14);
-              _$insertNode(_el$13, _el$15);
-              _$insertNode(_el$13, _el$16);
-              _$setProp(_el$13, "onMouseDown", jump);
-              _$insert(_el$13, () => page() + 1, _el$14);
-              _$insert(_el$13, () => pages().length, _el$15);
-              _$insert(_el$13, percentage, _el$16);
-              _$insertNode(_el$17, _$createTextNode(`\u5220\u9664`));
-              _$setProp(_el$17, "onMouseDown", removeBook);
+              _$insertNode(_el$13, _el$21);
+              _$insertNode(_el$13, _el$26);
+              _$setProp(_el$13, "flexShrink", 0);
+              _$insertNode(_el$14, _el$15);
+              _$insertNode(_el$14, _el$19);
+              _$setProp(_el$14, "flexShrink", 0);
+              _$setProp(_el$14, "height", 1);
+              _$setProp(_el$14, "flexDirection", "row");
+              _$setProp(_el$14, "justifyContent", "space-between");
+              _$insertNode(_el$15, _el$16);
+              _$insertNode(_el$15, _el$17);
+              _$insertNode(_el$15, _el$18);
+              _$setProp(_el$15, "onMouseDown", jump);
+              _$insert(_el$15, () => page() + 1, _el$16);
+              _$insert(_el$15, () => pages().length, _el$17);
+              _$insert(_el$15, percentage, _el$18);
+              _$insertNode(_el$19, _$createTextNode(`\u5220\u9664`));
+              _$setProp(_el$19, "onMouseDown", removeBook);
+              _$insertNode(_el$21, _el$22);
+              _$insertNode(_el$21, _el$24);
+              _$setProp(_el$21, "flexShrink", 0);
+              _$setProp(_el$21, "height", 1);
+              _$setProp(_el$21, "flexDirection", "row");
+              _$setProp(_el$21, "justifyContent", "space-between");
+              _$insertNode(_el$22, _$createTextNode(`\u2039 \u4E0A\u4E00\u9875`));
+              _$setProp(_el$22, "onMouseDown", () => turn(-1));
+              _$insertNode(_el$24, _$createTextNode(`\u4E0B\u4E00\u9875 \u203A`));
+              _$setProp(_el$24, "onMouseDown", () => turn(1));
+              _$insertNode(_el$26, _$createTextNode(`Ctrl+X J \u5927\u5C0F \xB7 Alt+M \u9690\u85CF`));
+              _$setProp(_el$26, "height", 1);
+              _$setProp(_el$26, "wrapMode", "none");
+              _$setProp(_el$26, "onMouseDown", size);
               _$effect((_p$) => {
-                var _v$5 = theme().textMuted, _v$6 = theme().textMuted;
-                _v$5 !== _p$.e && (_p$.e = _$setProp(_el$13, "fg", _v$5, _p$.e));
-                _v$6 !== _p$.t && (_p$.t = _$setProp(_el$17, "fg", _v$6, _p$.t));
+                var _v$6 = 3 + gap() * 2, _v$7 = gap(), _v$8 = theme().textMuted, _v$9 = theme().textMuted, _v$0 = theme().primary, _v$1 = theme().primary, _v$10 = theme().textMuted;
+                _v$6 !== _p$.e && (_p$.e = _$setProp(_el$13, "height", _v$6, _p$.e));
+                _v$7 !== _p$.t && (_p$.t = _$setProp(_el$13, "gap", _v$7, _p$.t));
+                _v$8 !== _p$.a && (_p$.a = _$setProp(_el$15, "fg", _v$8, _p$.a));
+                _v$9 !== _p$.o && (_p$.o = _$setProp(_el$19, "fg", _v$9, _p$.o));
+                _v$0 !== _p$.i && (_p$.i = _$setProp(_el$22, "fg", _v$0, _p$.i));
+                _v$1 !== _p$.n && (_p$.n = _$setProp(_el$24, "fg", _v$1, _p$.n));
+                _v$10 !== _p$.s && (_p$.s = _$setProp(_el$26, "fg", _v$10, _p$.s));
                 return _p$;
               }, {
                 e: void 0,
-                t: void 0
+                t: void 0,
+                a: void 0,
+                o: void 0,
+                i: void 0,
+                n: void 0,
+                s: void 0
               });
-              return _el$12;
-            })(), (() => {
-              var _el$19 = _$createElement("box"), _el$20 = _$createElement("text"), _el$22 = _$createElement("text");
-              _$insertNode(_el$19, _el$20);
-              _$insertNode(_el$19, _el$22);
-              _$setProp(_el$19, "flexDirection", "row");
-              _$setProp(_el$19, "justifyContent", "space-between");
-              _$insertNode(_el$20, _$createTextNode(`\u2039 \u4E0A\u4E00\u9875`));
-              _$setProp(_el$20, "onMouseDown", () => turn(-1));
-              _$insertNode(_el$22, _$createTextNode(`\u4E0B\u4E00\u9875 \u203A`));
-              _$setProp(_el$22, "onMouseDown", () => turn(1));
-              _$effect((_p$) => {
-                var _v$7 = theme().primary, _v$8 = theme().primary;
-                _v$7 !== _p$.e && (_p$.e = _$setProp(_el$20, "fg", _v$7, _p$.e));
-                _v$8 !== _p$.t && (_p$.t = _$setProp(_el$22, "fg", _v$8, _p$.t));
-                return _p$;
-              }, {
-                e: void 0,
-                t: void 0
-              });
-              return _el$19;
-            })(), (() => {
-              var _el$24 = _$createElement("text");
-              _$insertNode(_el$24, _$createTextNode(`Alt+R \u5927\u5C0F \xB7 Alt+M \u9690\u85CF`));
-              _$setProp(_el$24, "wrapMode", "none");
-              _$setProp(_el$24, "onMouseDown", size);
-              _$effect((_$p) => _$setProp(_el$24, "fg", theme().textMuted, _$p));
-              return _el$24;
+              return _el$13;
             })()];
           }
         }), null);
         _$effect((_p$) => {
-          var _v$9 = height() < 40 ? 0 : 1, _v$0 = theme().text, _v$1 = theme().textMuted, _v$10 = theme().textMuted;
-          _v$9 !== _p$.e && (_p$.e = _$setProp(_el$, "gap", _v$9, _p$.e));
-          _v$0 !== _p$.t && (_p$.t = _$setProp(_el$3, "fg", _v$0, _p$.t));
-          _v$1 !== _p$.a && (_p$.a = _$setProp(_el$7, "fg", _v$1, _p$.a));
-          _v$10 !== _p$.o && (_p$.o = _$setProp(_el$8, "fg", _v$10, _p$.o));
+          var _v$11 = book() ? rows() + chromeRows() : void 0, _v$12 = gap(), _v$13 = theme().text, _v$14 = theme().textMuted, _v$15 = theme().textMuted;
+          _v$11 !== _p$.e && (_p$.e = _$setProp(_el$, "height", _v$11, _p$.e));
+          _v$12 !== _p$.t && (_p$.t = _$setProp(_el$, "gap", _v$12, _p$.t));
+          _v$13 !== _p$.a && (_p$.a = _$setProp(_el$3, "fg", _v$13, _p$.a));
+          _v$14 !== _p$.o && (_p$.o = _$setProp(_el$7, "fg", _v$14, _p$.o));
+          _v$15 !== _p$.i && (_p$.i = _$setProp(_el$8, "fg", _v$15, _p$.i));
           return _p$;
         }, {
           e: void 0,
           t: void 0,
           a: void 0,
-          o: void 0
+          o: void 0,
+          i: void 0
         });
         return _el$;
       }

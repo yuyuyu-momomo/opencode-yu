@@ -28,6 +28,16 @@ test("字符偏移可以在窗口尺寸改变后恢复原阅读位置", () => {
   assert.equal(pageAt(old, Infinity), old.length - 1)
 })
 
+test("末尾换行不会生成跳转到 100% 仍无法抵达的空白末页", () => {
+  for (const text of ["第一章\n正文\n", "第一章\n正文\n\n\n"]) {
+    const pages = paginate(text, 36, 1)
+    assert.equal(pages.length, 2)
+    assert.equal(pages.at(-1).text, "正文")
+    assert.equal(pageAt(pages, text.length - 1), pages.length - 1)
+  }
+  assert.equal(paginate("").length, 1)
+})
+
 test("识别中文章节、无空格章节和英文章节，保留准确偏移", () => {
   const text = "书名\n第一章雨夜\n正文\n第二章\n正文\nChapter 3: Home\n正文\n后记\n"
   const chapters = chaptersOf(text)

@@ -3,6 +3,8 @@
 import base64
 import json
 import os
+import re
+import unicodedata
 from pathlib import Path
 import shlex
 import socket
@@ -56,6 +58,21 @@ def wait_for(predicate, name, timeout=30):
         time.sleep(0.25)
     raise AssertionError(f"{name}\n{value}")
 
+def open_size():
+    tmux("send-keys", "-t", "reader:0.0", "C-x")
+    tmux("send-keys", "-t", "reader:0.0", "j")
+
+def footer_rows(text):
+    lines = text.splitlines()
+    return tuple(next(i for i, line in enumerate(lines) if label in line) for label in ["页 ·", "上一页", "Ctrl+X J 大小"])
+
+def choose_height(percent, name):
+    open_size()
+    wait_for(lambda text: "阅读区域大小" in text, name + "-menu")
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"高度 {percent}%")
+    tmux("send-keys", "-t", "reader:0.0", "Enter")
+    return wait_for(lambda text: f"大小 {percent}%" in text and "阅读区域大小" not in text, name)
+
 def start(session):
     command = shlex.join(["env", *[f"{key}={value}" for key, value in ENV.items() if key.startswith(("XDG_", "OPENCODE_"))], "TERM=xterm-256color", BINARY, "--server", URL, "--session", session, str(PROJECT)])
     tmux("new-session", "-d", "-s", "reader", "-x", "160", "-y", "46", "-c", str(PROJECT), command + " 2>" + shlex.quote(str(WORK / "stderr.log")))
@@ -88,6 +105,16 @@ try:
     wait_for(lambda text: "随手读" in text and "夜班便利店" in text, "sidebar")
     tmux("send-keys", "-t", "reader:0.0", "M-Right")
     wait_for(lambda text: "2 /" in text, "next-page")
+    tmux("send-keys", "-t", "reader:0.0", "-l", "/moyu")
+    tmux("send-keys", "-t", "reader:0.0", "Enter")
+    time.sleep(0.4)  # Arguments-capable commands first complete to '/moyu '.
+    tmux("send-keys", "-t", "reader:0.0", "Enter")
+    wait_for(lambda text: "书架 · 摸鱼阅读" in text and "让当前模型采集小说" in text, "slash-moyu-shelf")
+    tmux("send-keys", "-t", "reader:0.0", "-l", "让当前模型")
+    tmux("send-keys", "-t", "reader:0.0", "Enter")
+    wait_for(lambda text: "让当前模型采集小说" in text and "忘语的凡人修仙传" in text, "collection-prompt")
+    tmux("send-keys", "-t", "reader:0.0", "Escape")
+    wait_for(lambda text: "让当前模型采集小说" not in text, "cancel-collection")
     tmux("send-keys", "-t", "reader:0.0", "M-o")
     wait_for(lambda text: "书架 · 摸鱼阅读" in text, "shelf")
     tmux("send-keys", "-t", "reader:0.0", "M-m")
@@ -105,7 +132,18 @@ try:
     time.sleep(1)
     start(session)
     wait_for(lambda text: "随手读" in text and "2 /" in text, "restart-resume")
-    tmux("send-keys", "-t", "reader:0.0", "M-r")
+    initial = capture("before-size")
+    row, line = next((i, line) for i, line in enumerate(initial.splitlines()) if "随手读" in line)
+    prefix = line[:line.index("大小")]
+    column = sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in prefix) + 1
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m")
+    wait_for(lambda text: "阅读区域大小" in text, "click-size")
+    tmux("send-keys", "-t", "reader:0.0", "Escape")
+    wait_for(lambda text: "阅读区域大小" not in text and "随手读" in text, "close-click-size")
+    choose_height(25, "height-25")
+    time.sleep(0.5)
+    small_footer = footer_rows(capture("height-25-layout"))
+    open_size()
     wait_for(lambda text: "阅读区域大小" in text, "size-menu")
     tmux("send-keys", "-t", "reader:0.0", "-l", "自定义")
     tmux("send-keys", "-t", "reader:0.0", "Enter")
@@ -113,6 +151,19 @@ try:
     tmux("send-keys", "-t", "reader:0.0", "-l", "75")
     tmux("send-keys", "-t", "reader:0.0", "Enter")
     wait_for(lambda text: "大小 75%" in text and "阅读区高度 · 输入" not in text, "height-applied")
+    enlarged = wait_for(lambda text: "阅读区域大小" not in text and all(a > b for a, b in zip(footer_rows(text), small_footer)), "footer-moves-with-height")
+    medium_footer = footer_rows(enlarged)
+    assert len(set(a - b for a, b in zip(medium_footer, small_footer))) == 1
+    choose_height(100, "height-100")
+    full = wait_for(lambda text: all(a > b for a, b in zip(footer_rows(text), medium_footer)), "footer-moves-to-full-height")
+    full_footer = footer_rows(full)
+    tmux("send-keys", "-t", "reader:0.0", "M-g")
+    wait_for(lambda text: "跳转阅读进度" in text, "last-page-jump")
+    tmux("send-keys", "-t", "reader:0.0", "-l", "100")
+    tmux("send-keys", "-t", "reader:0.0", "Enter")
+    last = wait_for(lambda text: (match := re.search(r"(\d+) / (\d+) 页 · 100%", text)) and match[1] == match[2], "last-page")
+    assert footer_rows(last) == full_footer, "Short final page must reserve the full body height"
+    choose_height(75, "restore-height-75")
     tmux("send-keys", "-t", "reader:0.0", "-l", "sized-input-check")
     wait_for(lambda text: "sized-input-check" in text, "size-keeps-coding-input")
     tmux("send-keys", "-t", "reader:0.0", "C-c")
@@ -124,7 +175,7 @@ try:
     wait_for(lambda text: len(text.splitlines()) == 32 and "大小 75%" in text and "下一页" in text, "compact-with-height")
     tmux("resize-window", "-t", "reader", "-x", "160", "-y", "54")
     wait_for(lambda text: len(text.splitlines()) == 54 and "大小 75%" in text and "下一页" in text, "resize-with-height")
-    tmux("send-keys", "-t", "reader:0.0", "M-r")
+    open_size()
     wait_for(lambda text: "阅读区域大小" in text, "size-menu-reset")
     tmux("send-keys", "-t", "reader:0.0", "-l", "自动高度")
     tmux("send-keys", "-t", "reader:0.0", "Enter")

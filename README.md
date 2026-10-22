@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.1.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.2.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -27,26 +27,36 @@ bash install.sh
 | `Alt+O` | 书架、打开本地文件 |
 | `Alt+C` | 搜索、跳转章节 |
 | `Alt+G` | 按百分比跳转 |
-| `Alt+R` | 调整小说在右侧栏内的高度比例 |
+| `Ctrl+X` 后按 `J` | 调整小说在右侧栏内的高度比例 |
 | `Alt+D` | 删除当前资料及采集缓存，操作前确认 |
 
-也可点击面板中的「大小」、书名、章节、进度、翻页按钮。`Ctrl+P` 搜索 `moyu` 或「摸鱼阅读」可以找到全部命令；`/read` 打开书架，`/moyu` 切换显示，`/chapters` 打开目录，`/readsize` 调整大小。普通输入不受翻页快捷键影响，翻页快捷键在对话框内和阅读面板隐藏时停用。
+也可点击面板中的「大小」、书名、章节、进度、翻页按钮。`Ctrl+P` 搜索 `moyu` 或「摸鱼阅读」可以找到全部命令；`/read` 打开书架，`/moyu` 打开书架，`/chapters` 打开目录，`/readsize` 调整大小。普通输入不受翻页快捷键影响，翻页快捷键在对话框内和阅读面板隐藏时停用。
 
 按 `Alt+O` 选择「打开本地文件」，输入路径，例如 `/mnt/d/books/三体.txt`。导入会生成加密副本，外部原文件保留。支持 UTF-8、带 BOM 的 UTF-16、GBK / GB18030、Markdown；单本最多 32 MiB。目前不支持 EPUB、PDF 或视频播放。
 
-进度按文件路径分别保存在 OpenCode 自身的插件存储中，翻页及退出时自动保存。窗口高度变化会重新分页。阅读面板本身不调用模型，也不把正文写入对话。
+进度按文件路径分别保存在 OpenCode 自身的插件存储中，翻页及退出时自动保存。窗口高度变化会重新分页。翻页阅读不调用模型，也不把正文写入对话。
 
 ## 调整阅读区域大小
 
-按 `Alt+R` 或点击面板右上角「大小」，选择 25%、50%、75%、100%，或输入自定义的 10–100%。设置即时生效并自动保存，重启后恢复；选择「自动高度」可恢复默认大小。
+按 `Ctrl+X` 后按 `J` 或点击面板右上角「大小」，选择 25%、50%、75%、100%，或输入自定义的 10–100%。设置即时生效并自动保存，重启后恢复；选择「自动高度」可恢复默认大小。
+
+默认使用 OpenCode 的 leader 序列：按下 `Ctrl+X`，松开后按 `J`；更改过 leader 时使用自己的 leader 后按 `J`。页码、翻页和快捷键提示随正文高度一起移动，末页也保留正文区域高度。
 
 比例按右侧栏预留标题和操作栏后的可用正文高度计算，正文最少保留 4 行。窗口或侧栏可用高度变化时自动调整并重新分页，保留阅读位置。
 
 ## 让当前模型采集小说
 
-安装器会同时注册服务端工具，直接使用你当前选择的 OpenCode 模型，不需要另配模型密钥。例如：
+OpenCode 2.x 中，在输入框提交：
 
-> 把这个小说目录链接加入我的书架：https://example.com/book/123/ 。先检查目录，按每批 5 章采集，遇到错误停止。
+```text
+/moyu 忘语的凡人修仙传，先采集20章
+```
+
+或输入 `/moyu` 打开书架，选择「让当前模型采集小说…」，填写书名、作者或目录链接。输入命令后若先出现补全结果，按 Enter 补全，再按 Enter 提交。
+
+插件会把采集任务交给当前选中的模型，在当前会话排队执行；从首页发起会创建会话。模型查找来源、核对目录，再分批存进加密书架，不需要另配 API 密钥。采集进度和错误在 OpenCode 对话中显示；完成后输入 `/moyu` 选择小说阅读。默认先采集 20 章，也可在要求中指定数量。请在可联网并允许工具执行的 agent 中使用；访问授权沿用 OpenCode 的现有设置。
+
+1.19.x 仍支持采集工具，在普通对话中向模型提出同样要求即可。
 
 模型可调用 `moyu_sources` 查看来源能力、`moyu_catalog` 查看目录、`moyu_import` 分批采集、`moyu_library` 查看资源、`moyu_delete` 删除用户指定的资源。相同 URL 重复采集会续接未完成章节，成功章节不重复下载；抓到的书按 `Alt+O` 即可打开。
 
@@ -67,7 +77,7 @@ bash install.sh
 # 重启 opencode
 ```
 
-Windows 原生 OpenCode 可双击 `install.cmd`；WSL 中使用 OpenCode 时，请在 WSL 运行 `bash install.sh`。安装器把插件及示例复制到配置目录内的 `extensions/opencode-moyu/`，自动识别版本：2.x 向 `opencode.json` 的 `plugins` 注册包目录，自动加载服务端和 `./tui` 双入口；1.19.x 向 `tui.json` 和 `opencode.json` 的 `plugin` 注册对应入口（均支持已有 JSONC 文件）。完成后可以删除解压目录。
+Windows 原生 OpenCode 可双击 `install.cmd`；WSL 中使用 OpenCode 时，请在 WSL 运行 `bash install.sh`。安装器把插件及示例复制到配置目录内的 `extensions/opencode-moyu/`，自动识别版本：2.x 向 `opencode.json` 的 `plugins` 注册包目录，自动加载服务端和 `./tui` 双入口；若已有 `cli.json` / `cli.jsonc`，同步注册并迁移旧的文件入口；1.19.x 向 `tui.json` 和 `opencode.json` 的 `plugin` 注册对应入口（均支持已有 JSONC 文件）。完成后可以删除解压目录。
 
 支持 `XDG_CONFIG_HOME` 和 `OPENCODE_CONFIG_DIR`。已有配置先备份，JSONC 注释、其他插件和模型 provider 设置保留；重复运行可更新插件。
 

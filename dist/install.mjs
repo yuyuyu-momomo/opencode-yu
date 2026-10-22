@@ -1398,7 +1398,7 @@ async function exists(path) {
   }
 }
 if (!values.remove) for (const name of assets) await access(join(root, "dist", name));
-async function plan(base, asset, defaultSettings) {
+async function plan(base, asset, defaultSettings, alignLibrary = false) {
   const json = join(dir, base + ".json"), jsonc = join(dir, base + ".jsonc");
   if (await exists(json) && await exists(jsonc)) throw new Error(`\u540C\u65F6\u5B58\u5728 ${json} \u548C ${jsonc}\uFF0C\u8BF7\u5148\u7EDF\u4E00\u914D\u7F6E\u6587\u4EF6`);
   const file = await exists(jsonc) ? jsonc : json;
@@ -1409,13 +1409,14 @@ async function plan(base, asset, defaultSettings) {
   if (config[field] !== void 0 && !Array.isArray(config[field])) throw new Error(`${field} \u5FC5\u987B\u662F\u6570\u7EC4\uFF1A${file}`);
   const target = pathToFileURL(v2 ? installedRoot : join(installedRoot, "dist", asset)).href;
   const own = [target, pathToFileURL(v2 ? root : join(root, "dist", asset)).href];
+  if (v2) for (const base2 of [root, installedRoot]) for (const name of assets.filter((name2) => name2 !== "install.mjs")) own.push(pathToFileURL(join(base2, "dist", name)).href);
   const matches = (row) => own.includes(Array.isArray(row) ? row[0] : typeof row === "object" && row ? row.package : row);
   const plugins = config[field] ?? [], previous = plugins.find(matches);
   const previousOptions = Array.isArray(previous) ? previous[1] : previous?.options;
   const settings = previousOptions && typeof previousOptions === "object" ? { ...previousOptions } : {};
   if (!settings.booksDir || settings.booksDir === join(root, "books")) settings.booksDir = defaultSettings.booksDir;
   settings.keyFile ||= defaultSettings.keyFile;
-  if (base === "opencode") {
+  if (alignLibrary) {
     settings.booksDir = defaultSettings.booksDir;
     settings.keyFile = defaultSettings.keyFile;
   }
@@ -1436,9 +1437,11 @@ async function plan(base, asset, defaultSettings) {
   return { file, present, original, output, changed, settings };
 }
 var defaults = { booksDir: join(installedRoot, "books"), keyFile: join(installedRoot, "keys/library.key") };
-var tui = v2 ? await plan("opencode", "server-v2.js", defaults) : await plan("tui", "tui.js", defaults);
-var server = v2 ? tui : await plan("opencode", "server.js", { ...defaults, booksDir: tui.settings.booksDir, keyFile: tui.settings.keyFile });
-var plans = v2 ? [server] : [tui, server];
+var shared = v2 ? await plan("opencode", "server-v2.js", defaults) : void 0;
+var hasCLI = v2 && (await exists(join(dir, "cli.json")) || await exists(join(dir, "cli.jsonc")));
+var tui = v2 ? hasCLI ? await plan("cli", "tui-v2.js", shared.settings) : shared : await plan("tui", "tui.js", defaults);
+var server = tui === shared ? shared : await plan("opencode", v2 ? "server-v2.js" : "server.js", tui.settings, true);
+var plans = tui === server ? [server] : [tui, server];
 if (values["dry-run"]) {
   console.log(`\u5C06${values.remove ? "\u79FB\u9664" : "\u6CE8\u518C"}\u9605\u8BFB\u4FA7\u680F\u4E0E\u6A21\u578B\u5DE5\u5177\uFF1A
 ${plans.map((item) => item.file).join("\n")}
@@ -1457,7 +1460,7 @@ if (!values.remove) {
     await copyFile(source, temporary, constants.COPYFILE_EXCL);
     await rename(temporary, destination);
   }
-  await writeFile(join(installedRoot, "package.json"), JSON.stringify({ name: "opencode-moyu", version: "0.1.1", type: "module", exports: { ".": "./dist/server-v2.js", "./tui": "./dist/tui-v2.js" } }, null, 2) + "\n", { mode: 384 });
+  await writeFile(join(installedRoot, "package.json"), JSON.stringify({ name: "opencode-moyu", version: "0.1.2", type: "module", exports: { ".": "./dist/server-v2.js", "./tui": "./dist/tui-v2.js" } }, null, 2) + "\n", { mode: 384 });
   await writeFile(join(installedRoot, "index.js"), 'export { default } from "./dist/server-v2.js"\n', { mode: 384 });
   await writeFile(join(installedRoot, "tui.js"), 'export { default } from "./dist/tui-v2.js"\n', { mode: 384 });
   const sample = join(tui.settings.booksDir, "\u591C\u73ED\u4FBF\u5229\u5E97.txt");

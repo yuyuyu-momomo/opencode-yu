@@ -73,6 +73,7 @@ export function paginate(text, width = 36, rows = 16) {
   for (let index = 0; index < lines.length; index += rows) {
     pages.push({ start: lines[index].start, text: lines.slice(index, index + rows).map((item) => item.text).join("\n") })
   }
+  while (pages.length > 1 && !pages.at(-1).text.trim()) pages.pop()
   return pages
 }
 

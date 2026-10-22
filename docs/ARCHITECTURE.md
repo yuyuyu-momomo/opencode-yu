@@ -4,7 +4,9 @@
 
 ```mermaid
 flowchart LR
-  Model[当前 OpenCode 模型] --> Tools[server 模型工具]
+  Input[/moyu 书名或目录链接] --> Host[ui/collect 当前会话提交]
+  Host --> Model[当前 OpenCode 模型]
+  Model --> Tools[server 模型工具]
   Tools --> Service[services 采集编排]
   Service --> Registry[core 来源注册表]
   Registry --> HTML[sources HTML 小说]
@@ -31,6 +33,7 @@ flowchart LR
 | `src/server/index.ts` | 将服务层封装为当前模型可调用的 OpenCode 工具 |
 | `src/server/v2.ts` | 2.x 工具注册、参数 schema、进度与权限 API 适配 |
 | `src/ui/index.tsx` | 原生侧栏、书架、阅读进度、删除确认和快捷键 |
+| `src/ui/collect.mjs` | 解析 /moyu 参数，复用宿主当前模型，将采集任务提交到会话队列 |
 | `src/ui/v2.ts` | 2.x 插槽、存储、键盘、主题和对话框 API 适配 |
 | `scripts/` | 构建、独立安装器、打包、真实终端验证 |
 
@@ -76,3 +79,5 @@ registry.register({
 `python3 scripts/smoke.py` 使用临时 XDG 配置和数据库、独立 tmux 会话启动真实 OpenCode，检查工具 ID、侧栏、导入、加密、翻页、目录、隐藏、重启续读、窗口缩放和删除确认；不会发送模型请求。模型工具已注册与真实外部模型完成一轮自主采集，是两个不同的验证范围。
 
 阅读区高度偏好使用插件存储；通过 OpenTUI 侧栏滚动视口的实际高度计算可用正文行数，并监听视口尺寸变化进行重新分页。比例设置保留阅读偏移，不改变原生侧栏布局。
+
+OpenCode 2.x 的 `/moyu` 无参数时打开书架，有参数时通过宿主 `session.switchModel` / `session.prompt` 提交给当前选择的模型；从首页则先创建当前项目的会话。不保存模型凭据，不在 UI 中执行爬虫。书架中的采集表单使用相同接口；1.19.x 通过普通对话调用已注册工具。

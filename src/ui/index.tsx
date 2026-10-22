@@ -21,6 +21,7 @@ const tui: TuiPlugin = async (api, options) => {
   const keyFile = typeof options?.keyFile === "string" ? expandPath(options.keyFile) : undefined
   const library = new LibraryStore(booksDir, { keyFile })
   await library.ready()
+  const collect = (api as typeof api & { moyu?: { collect: (query: string) => Promise<unknown> } }).moyu?.collect
   const [visible, setVisible] = createSignal(true)
   const [book, setBook] = createSignal<Book>()
   const [offset, setOffset] = createSignal(0)
@@ -105,26 +106,41 @@ const tui: TuiPlugin = async (api, options) => {
       onConfirm={(path) => { closeDialog(); void open(path) }}
     />)
   }
+  function promptCollection() {
+    dialog(() => <api.ui.DialogPrompt
+      title="让当前模型采集小说"
+      placeholder="例如：忘语的凡人修仙传，先采集20章；也可输入目录链接"
+      onCancel={closeDialog}
+      onConfirm={(query) => { closeDialog(); void collect?.(query) }}
+    />)
+  }
   async function shelf() {
     try {
       const items = await listBooks(booksDir, { keyFile })
       if (api.lifecycle.signal.aborted) return
       dialog(() => <api.ui.DialogSelect
         title="书架 · 摸鱼阅读"
-        placeholder="搜索书名，或选择「打开本地文件」"
+        placeholder="搜索书名，或选择采集 / 打开本地文件"
         options={[
+          ...(collect ? [{ title: "＋ 让当前模型采集小说…", value: "moyu:collect", description: "输入书名、作者或目录链接" }] : []),
           { title: "＋ 打开本地文件…", value: "", description: "输入任意 TXT 文件路径" },
           ...items.map((item) => ({ title: item.title, value: item.path, description: item.path })),
         ]}
         onSelect={(item) => {
           closeDialog()
-          if (item.value) void open(String(item.value))
+          if (item.value === "moyu:collect") promptCollection()
+          else if (item.value) void open(String(item.value))
           else promptFile()
         }}
       />)
     } catch {
       promptFile()
     }
+  }
+  function openMoyu() {
+    setVisible(true)
+    api.kv.set(prefix + "visible", true)
+    return shelf()
   }
   function chapters() {
     const current = book()
@@ -249,12 +265,13 @@ const tui: TuiPlugin = async (api, options) => {
   })
 
   api.keymap.registerLayer({
-    commands: [{ name: "moyu.toggle", title: "摸鱼阅读：显示 / 隐藏", category: "Moyu 阅读", namespace: "palette", slashName: "moyu", run: toggle }],
+    commands: [{ name: "moyu.toggle", title: "摸鱼阅读：显示 / 隐藏", category: "Moyu 阅读", namespace: "palette", run: toggle }],
     bindings: [{ key: "alt+m", cmd: "moyu.toggle", desc: "显示 / 隐藏小说" }],
   })
   api.keymap.registerLayer({
     mode: "base",
     commands: [
+      { name: "moyu.open", title: "摸鱼阅读：打开书架", slashName: "moyu", run: openMoyu },
       { name: "moyu.shelf", title: "摸鱼阅读：书架 / 打开文件", slashName: "read", run: shelf },
       { name: "moyu.chapters", title: "摸鱼阅读：章节目录", slashName: "chapters", run: chapters },
       { name: "moyu.jump", title: "摸鱼阅读：跳转进度", run: jump },
@@ -267,7 +284,7 @@ const tui: TuiPlugin = async (api, options) => {
       { key: "alt+o", cmd: "moyu.shelf", desc: "打开书架" },
       { key: "alt+c", cmd: "moyu.chapters", desc: "章节目录" },
       { key: "alt+g", cmd: "moyu.jump", desc: "跳转进度" },
-      { key: "alt+r", cmd: "moyu.size", desc: "调整阅读区域大小" },
+      { key: "<leader>j", cmd: "moyu.size", desc: "调整阅读区域大小" },
       { key: "alt+d", cmd: "moyu.delete", desc: "删除当前资料" },
       { key: "alt+right", cmd: "moyu.next", desc: "下一页" },
       { key: "alt+left", cmd: "moyu.prev", desc: "上一页" },
@@ -291,10 +308,12 @@ const tui: TuiPlugin = async (api, options) => {
     }
     onCleanup(() => viewport?.off("resized", measure))
     const theme = () => api.theme.current
+    const gap = () => height() < 40 ? 0 : 1
+    const chromeRows = () => 6 + gap() * 5
     const percentage = () => page() === pages().length - 1 ? 100 : Math.floor((pages()[page()].start / (book()?.text.length || 1)) * 100)
     return <Show when={visible()}>
-      <box flexShrink={0} width="100%" gap={height() < 40 ? 0 : 1} onSizeChange={function(this: BoxRenderable) { observe(this) }}>
-        <box flexDirection="row" justifyContent="space-between">
+      <box flexShrink={0} width="100%" height={book() ? rows() + chromeRows() : undefined} gap={gap()} onSizeChange={function(this: BoxRenderable) { observe(this) }}>
+        <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
           <text fg={theme().text} onMouseDown={() => void shelf()}><b>随手读</b></text>
           <box flexDirection="row" gap={2}>
             <text fg={theme().textMuted} onMouseDown={size}>{heightPercent() === undefined ? "大小" : `大小 ${heightPercent()}%`}</text>
@@ -302,20 +321,24 @@ const tui: TuiPlugin = async (api, options) => {
           </box>
         </box>
         <Show when={book()} fallback={<text fg={theme().textMuted}>{busy() ? "正在打开…" : "Alt+O 打开本地小说"}</text>}>
-          <box>
+          <box flexShrink={0} height={2}>
             <text fg={theme().textMuted} wrapMode="none" onMouseDown={() => void shelf()}>{book()?.title}</text>
             <text fg={theme().primary} wrapMode="none" onMouseDown={chapters}>{currentChapter()}</text>
           </box>
-          <text fg={theme().text} height={rows()} wrapMode="none">{pages()[page()].text}</text>
-          <box flexDirection="row" justifyContent="space-between">
-            <text fg={theme().textMuted} onMouseDown={jump}>{page() + 1} / {pages().length} 页 · {percentage()}%</text>
-            <text fg={theme().textMuted} onMouseDown={removeBook}>删除</text>
+          <box flexShrink={0} height={rows()} minHeight={rows()}>
+            <text fg={theme().text} width="100%" height="100%" wrapMode="none">{pages()[page()].text}</text>
           </box>
-          <box flexDirection="row" justifyContent="space-between">
-            <text fg={theme().primary} onMouseDown={() => turn(-1)}>‹ 上一页</text>
-            <text fg={theme().primary} onMouseDown={() => turn(1)}>下一页 ›</text>
+          <box flexShrink={0} height={3 + gap() * 2} gap={gap()}>
+            <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
+              <text fg={theme().textMuted} onMouseDown={jump}>{page() + 1} / {pages().length} 页 · {percentage()}%</text>
+              <text fg={theme().textMuted} onMouseDown={removeBook}>删除</text>
+            </box>
+            <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
+              <text fg={theme().primary} onMouseDown={() => turn(-1)}>‹ 上一页</text>
+              <text fg={theme().primary} onMouseDown={() => turn(1)}>下一页 ›</text>
+            </box>
+            <text fg={theme().textMuted} height={1} wrapMode="none" onMouseDown={size}>Ctrl+X J 大小 · Alt+M 隐藏</text>
           </box>
-          <text fg={theme().textMuted} wrapMode="none" onMouseDown={size}>Alt+R 大小 · Alt+M 隐藏</text>
         </Show>
       </box>
     </Show>

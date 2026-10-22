@@ -2,6 +2,7 @@ import { Plugin } from "@opencode/plugin/tui"
 import type { TuiPlugin, TuiDialogPromptProps, TuiDialogConfirmProps, TuiDialogSelectProps } from "@opencode-ai/plugin/tui"
 import type { JSX } from "@opentui/solid"
 import legacy from "./index"
+import { collectionQuery, requestCollection } from "./collect.mjs"
 
 type ReaderAPI = Parameters<TuiPlugin>[0]
 type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
@@ -58,7 +59,17 @@ export default Plugin.define({
       })
       return null
     }
+    async function collect(query: string) {
+      try {
+        const sessionID = await requestCollection(context, query)
+        context.ui.toast.show({ title: "摸鱼采集", message: "已交给当前模型，采集结果将在会话中显示", variant: "info" })
+        return sessionID
+      } catch (error) {
+        context.ui.toast.show({ title: "采集请求失败", message: error instanceof Error ? error.message : String(error), variant: "error" })
+      }
+    }
     const bridge = {
+      moyu: { collect },
       renderer: context.renderer,
       theme: { get current() { return { text: context.theme.text.base, textMuted: context.theme.text.muted, primary: context.theme.text.action.primary.base } } },
       kv: {
@@ -84,12 +95,21 @@ export default Plugin.define({
       keymap: {
         registerLayer(layer: ReaderLayer) {
           context.keymap.layer(() => ({
-            mode: layer.mode ?? "global",
+            // Slash completion and the palette push their own input mode. Keep
+            // command discovery global, but pass modal keyboard events through.
+            mode: "global",
             commands: layer.commands?.map((command) => ({
               id: command.name, title: command.title, group: command.category,
-              palette: true as const, enabled: command.enabled, run: command.run,
+              palette: true as const, enabled: command.enabled,
+              run: (input, event) => {
+                if (event && layer.mode === "base" && context.keymap.mode.current() !== "base") return false
+                event?.preventDefault()
+                event?.stopPropagation()
+                if (command.slashName === "moyu" && collectionQuery(input)) return collect(input!).then(() => {})
+                return command.run()
+              },
               bind: layer.bindings?.find((binding) => binding.cmd === command.name)?.key,
-              slash: command.slashName ? { name: command.slashName } : undefined,
+              slash: command.slashName ? { name: command.slashName, ...(command.slashName === "moyu" ? { arguments: true } : {}) } : undefined,
             })),
           }))
         },
