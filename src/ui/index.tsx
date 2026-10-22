@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createEffect, createMemo, createSignal, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { ScrollBoxRenderable, type BoxRenderable } from "@opentui/core"
 import { dirname, resolve, basename } from "node:path"
 import { watch } from "node:fs"
 import { access } from "node:fs/promises"
@@ -25,11 +26,18 @@ const tui: TuiPlugin = async (api, options) => {
   const [offset, setOffset] = createSignal(0)
   const [height, setHeight] = createSignal(api.renderer.height)
   const [busy, setBusy] = createSignal(false)
+  const [heightPercent, setHeightPercent] = createSignal<number>()
+  const [viewportHeight, setViewportHeight] = createSignal<number>()
   // V2 does not expose the host's onboarding dismissal state; reserve its space.
   const onboarding = createMemo(() => options?.hostMajor === 2 || (!api.kv.get("dismissed_getting_started", false) && !api.state.provider.some(
     (provider) => provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost?.input !== 0),
   )))
-  const rows = createMemo(() => Math.min(fixedRows ?? 24, Math.max(4, height() - (onboarding() ? 31 : 20))))
+  const availableRows = createMemo(() => Math.max(4, viewportHeight() === undefined
+    ? height() - (onboarding() ? 31 : 20)
+    : viewportHeight()! - (height() < 40 ? 6 : 11)))
+  const rows = createMemo(() => heightPercent() === undefined
+    ? Math.min(fixedRows ?? 24, availableRows())
+    : Math.max(4, Math.floor(availableRows() * heightPercent()! / 100)))
   const pages = createMemo(() => paginate(book()?.text ?? "", 36, rows()))
   const page = createMemo(() => pageAt(pages(), offset()))
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "正文")
@@ -146,6 +154,43 @@ const tui: TuiPlugin = async (api, options) => {
     />)
   }
 
+  function setSize(percent?: number) {
+    setHeightPercent(percent)
+    api.kv.set(prefix + "heightPercent", percent ?? null)
+    save()
+  }
+  function customSize() {
+    dialog(() => <api.ui.DialogPrompt
+      title="阅读区高度 · 输入 10–100%"
+      placeholder="例如 75，按可用正文高度计算"
+      onCancel={closeDialog}
+      onConfirm={(input) => {
+        const value = Number(input.trim().replace(/%$/, ""))
+        if (!input.trim() || !Number.isFinite(value) || value < 10 || value > 100) return toast("请输入 10–100 之间的百分比", "error")
+        closeDialog()
+        setSize(Math.round(value))
+      }}
+    />)
+  }
+  function size() {
+    const selected = heightPercent() === undefined ? "auto" : String(heightPercent())
+    dialog(() => <api.ui.DialogSelect
+      title="阅读区域大小"
+      placeholder="调整小说在右侧栏中的高度，设置自动保存"
+      options={[
+        { title: "自动高度", value: "auto", description: "恢复默认正文行数" },
+        ...[25, 50, 75, 100].map((value) => ({ title: `高度 ${value}%`, value: String(value), description: "占可用正文高度的比例" })),
+        { title: "自定义高度…", value: "custom", description: "输入 10–100%" },
+      ]}
+      current={selected}
+      onSelect={(item) => {
+        closeDialog()
+        if (item.value === "custom") return customSize()
+        setSize(item.value === "auto" ? undefined : Number(item.value))
+      }}
+    />)
+  }
+
   const resize = () => setHeight(api.renderer.height)
   let refresh: ReturnType<typeof setTimeout> | undefined
   const watcher = watch(booksDir, (_event, filename) => {
@@ -196,6 +241,8 @@ const tui: TuiPlugin = async (api, options) => {
   createEffect(() => {
     if (!api.kv.ready || started) return
     started = true
+    const savedSize = Number(api.kv.get<number | null>(prefix + "heightPercent", null))
+    if (Number.isFinite(savedSize) && savedSize >= 10 && savedSize <= 100) setHeightPercent(savedSize)
     setVisible(api.kv.get<boolean>(prefix + "visible", true))
     const initial = typeof options?.file === "string" ? options.file : api.kv.get<string>(prefix + "last", "")
     void open(initial || resolve(pluginRoot, "books/夜班便利店.txt"), true)
@@ -211,6 +258,7 @@ const tui: TuiPlugin = async (api, options) => {
       { name: "moyu.shelf", title: "摸鱼阅读：书架 / 打开文件", slashName: "read", run: shelf },
       { name: "moyu.chapters", title: "摸鱼阅读：章节目录", slashName: "chapters", run: chapters },
       { name: "moyu.jump", title: "摸鱼阅读：跳转进度", run: jump },
+      { name: "moyu.size", title: "摸鱼阅读：调整阅读区域大小", slashName: "readsize", run: size },
       { name: "moyu.delete", title: "摸鱼阅读：删除当前资料", run: removeBook },
       { name: "moyu.next", title: "摸鱼阅读：下一页", enabled: () => visible() && api.route.current.name === "session", run: () => turn(1) },
       { name: "moyu.prev", title: "摸鱼阅读：上一页", enabled: () => visible() && api.route.current.name === "session", run: () => turn(-1) },
@@ -219,6 +267,7 @@ const tui: TuiPlugin = async (api, options) => {
       { key: "alt+o", cmd: "moyu.shelf", desc: "打开书架" },
       { key: "alt+c", cmd: "moyu.chapters", desc: "章节目录" },
       { key: "alt+g", cmd: "moyu.jump", desc: "跳转进度" },
+      { key: "alt+r", cmd: "moyu.size", desc: "调整阅读区域大小" },
       { key: "alt+d", cmd: "moyu.delete", desc: "删除当前资料" },
       { key: "alt+right", cmd: "moyu.next", desc: "下一页" },
       { key: "alt+left", cmd: "moyu.prev", desc: "上一页" },
@@ -226,13 +275,31 @@ const tui: TuiPlugin = async (api, options) => {
   })
 
   function Reader() {
+    let viewport: BoxRenderable | undefined
+    const measure = () => { if (viewport && !viewport.isDestroyed) setViewportHeight(viewport.height) }
+    function observe(node: BoxRenderable) {
+      // V1's scrollbox also contains host cards; retain its conservative height budget.
+      if (options?.hostMajor !== 2) return
+      if (viewport) return
+      for (let parent = node.parent; parent; parent = parent.parent) {
+        if (!(parent instanceof ScrollBoxRenderable)) continue
+        viewport = parent.viewport
+        viewport.on("resized", measure)
+        measure()
+        break
+      }
+    }
+    onCleanup(() => viewport?.off("resized", measure))
     const theme = () => api.theme.current
     const percentage = () => page() === pages().length - 1 ? 100 : Math.floor((pages()[page()].start / (book()?.text.length || 1)) * 100)
     return <Show when={visible()}>
-      <box flexShrink={0} gap={height() < 40 ? 0 : 1}>
+      <box flexShrink={0} width="100%" gap={height() < 40 ? 0 : 1} onSizeChange={function(this: BoxRenderable) { observe(this) }}>
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme().text} onMouseDown={() => void shelf()}><b>随手读</b></text>
-          <text fg={theme().textMuted} onMouseDown={toggle}>隐藏 Alt+M</text>
+          <box flexDirection="row" gap={2}>
+            <text fg={theme().textMuted} onMouseDown={size}>{heightPercent() === undefined ? "大小" : `大小 ${heightPercent()}%`}</text>
+            <text fg={theme().textMuted} onMouseDown={toggle}>隐藏</text>
+          </box>
         </box>
         <Show when={book()} fallback={<text fg={theme().textMuted}>{busy() ? "正在打开…" : "Alt+O 打开本地小说"}</text>}>
           <box>
@@ -248,7 +315,7 @@ const tui: TuiPlugin = async (api, options) => {
             <text fg={theme().primary} onMouseDown={() => turn(-1)}>‹ 上一页</text>
             <text fg={theme().primary} onMouseDown={() => turn(1)}>下一页 ›</text>
           </box>
-          <text fg={theme().textMuted}>Alt+←/→ 翻页 · Alt+O 书架</text>
+          <text fg={theme().textMuted} wrapMode="none" onMouseDown={size}>Alt+R 大小 · Alt+M 隐藏</text>
         </Show>
       </box>
     </Show>

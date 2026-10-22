@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.1.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -27,13 +27,20 @@ bash install.sh
 | `Alt+O` | 书架、打开本地文件 |
 | `Alt+C` | 搜索、跳转章节 |
 | `Alt+G` | 按百分比跳转 |
+| `Alt+R` | 调整小说在右侧栏内的高度比例 |
 | `Alt+D` | 删除当前资料及采集缓存，操作前确认 |
 
-也可点击面板中的书名、章节、进度、翻页按钮。`Ctrl+P` 搜索 `moyu` 或「摸鱼阅读」可以找到全部命令；`/read` 打开书架，`/moyu` 切换显示，`/chapters` 打开目录。普通输入不受翻页快捷键影响，翻页快捷键在对话框内和阅读面板隐藏时停用。
+也可点击面板中的「大小」、书名、章节、进度、翻页按钮。`Ctrl+P` 搜索 `moyu` 或「摸鱼阅读」可以找到全部命令；`/read` 打开书架，`/moyu` 切换显示，`/chapters` 打开目录，`/readsize` 调整大小。普通输入不受翻页快捷键影响，翻页快捷键在对话框内和阅读面板隐藏时停用。
 
 按 `Alt+O` 选择「打开本地文件」，输入路径，例如 `/mnt/d/books/三体.txt`。导入会生成加密副本，外部原文件保留。支持 UTF-8、带 BOM 的 UTF-16、GBK / GB18030、Markdown；单本最多 32 MiB。目前不支持 EPUB、PDF 或视频播放。
 
 进度按文件路径分别保存在 OpenCode 自身的插件存储中，翻页及退出时自动保存。窗口高度变化会重新分页。阅读面板本身不调用模型，也不把正文写入对话。
+
+## 调整阅读区域大小
+
+按 `Alt+R` 或点击面板右上角「大小」，选择 25%、50%、75%、100%，或输入自定义的 10–100%。设置即时生效并自动保存，重启后恢复；选择「自动高度」可恢复默认大小。
+
+比例按右侧栏预留标题和操作栏后的可用正文高度计算，正文最少保留 4 行。窗口或侧栏可用高度变化时自动调整并重新分页，保留阅读位置。
 
 ## 让当前模型采集小说
 
