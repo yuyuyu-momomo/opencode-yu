@@ -434,7 +434,8 @@ const tui: TuiPlugin = async (api, options) => {
         </box>
         <box flexShrink={0} height={1} flexDirection="row" gap={2}>
           <Button label={mode() === "video" ? "[视频库]" : "[书架]"} action={() => mode() === "video" ? video.shelf() : shelf()} />
-          <Button label={mode() === "video" ? "[跳转]" : "[目录]"} action={() => mode() === "video" ? video.jump() : chapters()} />
+          <Button label={mode() === "video" ? "[搜索]" : "[目录]"} action={() => mode() === "video" ? video.search() : chapters()} />
+          <Show when={mode() === "video"}><Button label="[热门]" action={() => video.popular()} /></Show>
           <Button label="[删除]" action={removeBook} />
         </box>
         <box flexShrink={0} height={1 + gap()} flexDirection="row" gap={2}>

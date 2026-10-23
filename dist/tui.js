@@ -1163,13 +1163,13 @@ var require_dist2 = __commonJS({
 import { memo as _$memo2 } from "@opentui/solid";
 import { createTextNode as _$createTextNode2 } from "@opentui/solid";
 import { insertNode as _$insertNode2 } from "@opentui/solid";
-import { use as _$use } from "@opentui/solid";
+import { use as _$use2 } from "@opentui/solid";
 import { effect as _$effect2 } from "@opentui/solid";
 import { insert as _$insert2 } from "@opentui/solid";
 import { setProp as _$setProp2 } from "@opentui/solid";
 import { createElement as _$createElement2 } from "@opentui/solid";
 import { createComponent as _$createComponent2 } from "@opentui/solid";
-import { createEffect as createEffect2, createMemo, createSignal as createSignal2, onCleanup, onMount, Show as Show2 } from "solid-js";
+import { createEffect as createEffect2, createMemo, createSignal as createSignal2, onCleanup as onCleanup2, onMount, Show as Show2 } from "solid-js";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { dirname as dirname4, resolve as resolve3, basename as basename3 } from "node:path";
 import { watch as watch2 } from "node:fs";
@@ -1693,11 +1693,13 @@ import { createTextNode as _$createTextNode } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
 import { effect as _$effect } from "@opentui/solid";
 import { insert as _$insert } from "@opentui/solid";
-import { memo as _$memo } from "@opentui/solid";
+import { use as _$use } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
+import { memo as _$memo } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
-import { createEffect, createSignal, For, Show, untrack } from "solid-js";
+import { createEffect, createSignal, For, Show, untrack, onCleanup } from "solid-js";
+import * as OpenTui from "@opentui/core";
 import { watch } from "node:fs";
 import { access as access3 } from "node:fs/promises";
 import { join as join6 } from "node:path";
@@ -1802,7 +1804,7 @@ var PixelPlayer = class {
   constructor({ onFrame = (_frame, _size) => {
   }, onState = (_state) => {
   }, onError = (_error) => {
-  }, binary = mediaBinary, launch = launchMedia } = {}) {
+  }, binary = mediaBinary, launch = launchMedia, frameSize = pixelSize } = {}) {
     this.onFrame = onFrame;
     this.onState = onState;
     this.onError = onError;
@@ -1816,6 +1818,8 @@ var PixelPlayer = class {
     this.columns = 36;
     this.rows = 16;
     this.disposed = false;
+    this.frameSize = frameSize;
+    this.scaleFilter = "neighbor";
   }
   emit() {
     this.onState({ position: this.position, playing: this.playing, muted: this.muted, loading: this.loading || false });
@@ -1878,8 +1882,8 @@ var PixelPlayer = class {
     try {
       const binary = await this.binary("ffmpeg"), path = await nativeMediaPath(binary, video.path);
       if (token !== this.generation || this.disposed) return;
-      const size = pixelSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3;
-      const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=neighbor,setsar=1`, ...!playing ? ["-frames:v", "1"] : [], "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"];
+      const size = this.frameSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3;
+      const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=${this.scaleFilter},setsar=1`, ...!playing ? ["-frames:v", "1"] : [], "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"];
       const child = this.decoder = this.launch(binary, args);
       let buffer = Buffer.alloc(0), stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now();
       let nextFrameAt;
@@ -1969,6 +1973,81 @@ var PixelPlayer = class {
     this.stop();
     this.playing = false;
     this.disposed = true;
+  }
+};
+
+// src/media/inline-image.mjs
+function imageProtocol(core, renderer) {
+  if (typeof core.ImageRenderable !== "function" || typeof core.NativeImage?.fromRgba !== "function") return "legacy";
+  const caps = renderer.capabilities || {};
+  const requested = caps.image_protocol || "auto";
+  if (typeof core.resolveImageRenderProtocol === "function") return core.resolveImageRenderProtocol(requested, caps, Boolean(renderer.resolution));
+  if (requested === "blocks" || caps.multiplexer && caps.multiplexer !== "none") return "blocks";
+  if (caps.kitty_graphics) return "kitty";
+  return caps.sixel && renderer.resolution ? "sixel" : "blocks";
+}
+function imageFrameSize(width, height, columns, rows, renderer, protocol) {
+  const cellWidth = renderer.resolution?.width / renderer.width || 8;
+  const cellHeight = renderer.resolution?.height / renderer.height || 16;
+  const maxWidth = Math.min(1280, Math.max(2, columns * (protocol === "blocks" ? 4 : cellWidth)));
+  const maxHeight = Math.min(1280, Math.max(2, rows * (protocol === "blocks" ? 8 : cellHeight)));
+  const scale = Math.min(1, maxWidth / width, maxHeight / height, Math.sqrt(921600 / (width * height)));
+  return { width: Math.max(2, Math.floor(width * scale / 2) * 2), height: Math.max(2, Math.floor(height * scale / 2) * 2) };
+}
+var InlineImage = class {
+  constructor(core, renderer, onError = (_error) => {
+  }) {
+    this.core = core;
+    this.renderer = renderer;
+    this.onError = onError;
+  }
+  mount(container) {
+    this.unmount();
+    try {
+      this.node = new this.core.ImageRenderable(this.renderer, { id: "moyu-video-image", width: "100%", height: "100%", fit: "fit", protocol: "auto", onError: this.onError });
+      container.add(this.node);
+      if (this.last) this.draw(this.last.bytes, this.last.size);
+    } catch (error) {
+      this.onError(error);
+    }
+  }
+  present(bytes, size) {
+    this.last = { bytes: Buffer.from(bytes), size };
+    if (this.node && !this.node.isDestroyed) {
+      try {
+        this.draw(bytes, size);
+      } catch (error) {
+        this.onError(error);
+      }
+    }
+  }
+  draw(bytes, size) {
+    if (bytes.length !== size.width * size.height * 3) throw new Error("\u539F\u753B\u5E27\u957F\u5EA6\u5F02\u5E38");
+    const rgba = Buffer.allocUnsafe(size.width * size.height * 4);
+    for (let source = 0, target = 0; source < bytes.length; source += 3, target += 4) {
+      rgba[target] = bytes[source];
+      rgba[target + 1] = bytes[source + 1];
+      rgba[target + 2] = bytes[source + 2];
+      rgba[target + 3] = 255;
+    }
+    const image = this.core.NativeImage.fromRgba(rgba, size.width, size.height, size.width * 4, { owner: this.renderer.nativeScene?.resourceContext });
+    try {
+      this.node.source = image;
+    } finally {
+      image.dispose();
+    }
+  }
+  clear() {
+    this.last = void 0;
+    if (this.node && !this.node.isDestroyed) this.node.source = void 0;
+  }
+  unmount() {
+    if (this.node && !this.node.isDestroyed) this.node.destroy();
+    this.node = void 0;
+  }
+  dispose() {
+    this.clear();
+    this.unmount();
   }
 };
 
@@ -2158,7 +2237,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.3.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url.origin === initialOrigin ? headers : {} }
+          headers: { "User-Agent": "OpenCode-Moyu/0.4.0 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -2286,7 +2365,20 @@ function createVideoPlatforms({ settings, read = createHttpClient({ maxBytes: 10
     const data = await bili("/x/web-interface/view", target.id.startsWith("av") ? { aid: target.id.slice(2) } : { bvid: target.id }, signal);
     return { ...target, title: short(data.title), author: short(data.owner?.name, 80), description: short(data.desc, 600), duration: Number(data.duration) || 0, views: Number(data.stat?.view) || 0 };
   }
-  return { search, info, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
+  async function popular({ page = 1, signal } = {}) {
+    page = Math.max(1, Math.min(100, Math.floor(Number(page) || 1)));
+    const data = await bili("/x/web-interface/popular", { pn: page, ps: 10 }, signal);
+    const items = (data.list || []).filter((item) => /^BV[\da-zA-Z]{10}$/.test(item.bvid)).slice(0, 10).map((item) => ({
+      platform: "bilibili",
+      id: item.bvid,
+      url: `https://www.bilibili.com/video/${item.bvid}/`,
+      title: short(item.title),
+      author: short(item.owner?.name, 80),
+      duration: Number(item.duration) || 0
+    }));
+    return { items, page, hasMore: !data.no_more && items.length > 0 && page < 100 };
+  }
+  return { search, info, popular, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
 }
 
 // src/services/video-ingestion.mjs
@@ -2490,6 +2582,19 @@ function createVideoReader(api, library, settings) {
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [downloadProgress, setDownloadProgress] = createSignal("");
+  const [presentation, setPresentation] = createSignal(api.kv.get(prefix + "presentation", "auto"));
+  const [protocol, setProtocol] = createSignal(imageProtocol(OpenTui, api.renderer));
+  const [sourceProgress, setSourceProgress] = createSignal("");
+  let sourceAbort;
+  const inline = new InlineImage(OpenTui, api.renderer, (cause) => {
+    setPresentation("pixel");
+    showError(cause);
+  });
+  const useImage = () => presentation() !== "pixel" && protocol() !== "legacy";
+  const qualityLabel = () => !useImage() ? "\u50CF\u7D20\u98CE" : ["kitty", "sixel"].includes(protocol()) ? "\u539F\u753B" : "\u7EC6\u817B\u5B57\u7B26";
+  const capabilitiesChanged = () => setProtocol(imageProtocol(OpenTui, api.renderer));
+  api.renderer.on("capabilities", capabilitiesChanged);
+  api.renderer.on("resize", capabilitiesChanged);
   const sources = createVideoIngestion({
     directory: library.directory,
     keyFile: library.vault.keyFile
@@ -2505,7 +2610,12 @@ function createVideoReader(api, library, settings) {
     return colors.get(value);
   }
   const player = new PixelPlayer({
+    frameSize: (width, height, columns, rows) => useImage() ? imageFrameSize(width, height, columns, rows, api.renderer, protocol()) : pixelSize(width, height, columns, rows),
     onFrame: (bytes, size) => {
+      if (useImage()) {
+        inline.present(bytes, size);
+        return;
+      }
       setFrameSize({
         width: size.width,
         height: size.height / 2
@@ -2549,6 +2659,7 @@ function createVideoReader(api, library, settings) {
         pause();
         setVideo(void 0);
         setFrame([]);
+        inline.clear();
         player.video = void 0;
         api.kv.set(prefix + current.id, 0);
         api.kv.set(prefix + "last", "");
@@ -2565,6 +2676,7 @@ function createVideoReader(api, library, settings) {
     setBusy(false);
     setVideo(void 0);
     setFrame([]);
+    inline.clear();
     player.video = void 0;
     void current.release().catch(() => {
     });
@@ -2594,6 +2706,7 @@ function createVideoReader(api, library, settings) {
       }
       setVideo(next);
       setFrame([]);
+      inline.clear();
       settings.activate();
       api.kv.set(prefix + "last", next.id);
       await player.load(next, api.kv.get(prefix + next.id, 0));
@@ -2694,6 +2807,62 @@ function createVideoReader(api, library, settings) {
       }
     }));
   }
+  async function querySource(label, request, show) {
+    sourceAbort?.abort();
+    const abort = sourceAbort = new AbortController();
+    setError("");
+    setSourceProgress(label);
+    try {
+      const result = await request(abort.signal);
+      if (sourceAbort === abort && !abort.signal.aborted && !api.lifecycle.signal.aborted && settings.active()) show(result);
+    } catch (cause) {
+      if (!abort.signal.aborted) showError(cause);
+    } finally {
+      if (sourceAbort === abort) {
+        sourceAbort = void 0;
+        setSourceProgress("");
+      }
+    }
+  }
+  function popular(page = 1) {
+    settings.close();
+    void querySource("\u6B63\u5728\u83B7\u53D6 B \u7AD9\u70ED\u95E8\u2026", (signal) => sources.platforms.popular({
+      page,
+      signal
+    }), (result) => {
+      if (!result.items.length) return api.ui.toast({
+        message: "\u5F53\u524D\u6CA1\u6709\u66F4\u591A\u70ED\u95E8\u89C6\u9891",
+        variant: "info"
+      });
+      settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+        get title() {
+          return `B \u7AD9\u70ED\u95E8 \xB7 \u7B2C ${result.page} \u9875`;
+        },
+        placeholder: "\u70B9\u51FB\u89C6\u9891\u4E0B\u8F7D\uFF0C\u5173\u95ED\u540E\u4ECD\u53EF\u70B9\u51FB\u300C\u70ED\u95E8\u300D\u7EE7\u7EED\u6D4F\u89C8",
+        get options() {
+          return [...result.items.map((item) => ({
+            title: item.title,
+            value: item.url,
+            description: `${item.author} \xB7 ${mediaTime(item.duration)}`
+          })), ...result.hasMore ? [{
+            title: "\u6362\u4E00\u6279 \u2192",
+            value: "next",
+            description: "\u4E0B\u4E00\u9875\u70ED\u95E8\u89C6\u9891"
+          }] : [], ...page > 1 ? [{
+            title: "\u2190 \u4E0A\u4E00\u6279",
+            value: "previous",
+            description: "\u8FD4\u56DE\u4E0A\u4E00\u9875"
+          }] : []];
+        },
+        onSelect: (item) => {
+          settings.close();
+          if (item.value === "next") popular(page + 1);
+          else if (item.value === "previous") popular(page - 1);
+          else void download(String(item.value));
+        }
+      }));
+    });
+  }
   function searchPlatform() {
     settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
       title: "\u9009\u62E9\u89C6\u9891\u641C\u7D22\u6765\u6E90",
@@ -2718,12 +2887,11 @@ function createVideoReader(api, library, settings) {
           },
           onConfirm: (query) => {
             settings.close();
-            void sources.platforms.search({
+            void querySource("\u6B63\u5728\u641C\u7D22\u89C6\u9891\u2026", (signal) => sources.platforms.search({
               platform: String(platform.value),
               query,
-              signal: api.lifecycle.signal
-            }).then((items) => {
-              if (api.lifecycle.signal.aborted || !settings.active()) return;
+              signal
+            }), (items) => {
               if (!items.length) return api.ui.toast({
                 message: "\u6CA1\u6709\u627E\u5230\u5339\u914D\u7684\u89C6\u9891",
                 variant: "info"
@@ -2732,7 +2900,7 @@ function createVideoReader(api, library, settings) {
                 get title() {
                   return `${platform.title} \xB7 \u641C\u7D22\u7ED3\u679C`;
                 },
-                placeholder: "\u70B9\u51FB\u89C6\u9891\u4E0B\u8F7D\u5230\u50CF\u7D20\u5F71\u9662",
+                placeholder: "\u70B9\u51FB\u89C6\u9891\u4E0B\u8F7D\u5230\u4FA7\u680F\u64AD\u653E\u5668",
                 get options() {
                   return items.map((item) => ({
                     title: item.title,
@@ -2745,9 +2913,34 @@ function createVideoReader(api, library, settings) {
                   void download(String(item.value));
                 }
               }));
-            }).catch(showError);
+            });
           }
         }));
+      }
+    }));
+  }
+  function quality() {
+    settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+      title: "\u4FA7\u680F\u89C6\u9891\u753B\u8D28",
+      get placeholder() {
+        return _$memo(() => protocol() === "legacy")() ? "\u5F53\u524D OpenCode \u7F3A\u5C11\u56FE\u7247\u7EC4\u4EF6\uFF0C\u4F7F\u7528\u50CF\u7D20\u98CE" : ["kitty", "sixel"].includes(protocol()) ? "\u5F53\u524D\u7EC8\u7AEF\u652F\u6301\u539F\u753B\uFF0C\u4ECD\u5728\u4FA7\u680F\u5185\u64AD\u653E" : "\u5F53\u524D\u7EC8\u7AEF\u672A\u542F\u7528\u56FE\u7247\u534F\u8BAE\uFF0C\u81EA\u52A8\u6A21\u5F0F\u4F7F\u7528\u7EC6\u817B\u5B57\u7B26\uFF1B\u539F\u753B\u9700\u8981\u652F\u6301 Sixel / Kitty \u7684\u7EC8\u7AEF";
+      },
+      get current() {
+        return presentation();
+      },
+      options: [{
+        title: "\u81EA\u52A8\u6E05\u6670\uFF08\u63A8\u8350\uFF09",
+        value: "auto",
+        description: "\u56FE\u7247\u534F\u8BAE\u53EF\u7528\u65F6\u663E\u793A\u539F\u753B\uFF0C\u5426\u5219\u4F7F\u7528\u7EC6\u817B\u5B57\u7B26"
+      }, {
+        title: "\u50CF\u7D20\u98CE",
+        value: "pixel",
+        description: "\u4FDD\u7559\u539F\u6765\u7684\u4F4E\u5F00\u9500\u5B57\u7B26\u753B\u9762"
+      }],
+      onSelect: (item) => {
+        settings.close();
+        setPresentation(String(item.value));
+        api.kv.set(prefix + "presentation", item.value);
       }
     }));
   }
@@ -2829,6 +3022,14 @@ function createVideoReader(api, library, settings) {
             value: "search",
             description: "\u54D4\u54E9\u54D4\u54E9 / YouTube"
           }, {
+            title: "\u6D4F\u89C8 B \u7AD9\u70ED\u95E8\u2026",
+            value: "popular",
+            description: "\u76F4\u63A5\u9009\u89C6\u9891\uFF0C\u65E0\u9700\u94FE\u63A5\u6216 API Key"
+          }, {
+            title: "\u4FA7\u680F\u89C6\u9891\u753B\u8D28\u2026",
+            value: "quality",
+            description: qualityLabel()
+          }, {
             title: "\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u2026",
             value: "settings",
             description: "\u586B\u5199\u6216\u79FB\u9664 YouTube API Key"
@@ -2843,6 +3044,8 @@ function createVideoReader(api, library, settings) {
           if (!item.value) prompt();
           else if (item.value === "url") promptUrl();
           else if (item.value === "search") searchPlatform();
+          else if (item.value === "popular") popular();
+          else if (item.value === "quality") quality();
           else if (item.value === "settings") void sourceSettings();
           else void load("", resources.find((saved) => saved.id === item.value));
         }
@@ -2884,6 +3087,7 @@ function createVideoReader(api, library, settings) {
           if (video()?.id === current.id) {
             setVideo(void 0);
             setFrame([]);
+            inline.clear();
             player.video = void 0;
             api.kv.set(prefix + "last", "");
           }
@@ -2944,6 +3148,7 @@ function createVideoReader(api, library, settings) {
     const columns = settings.columns(), rows = settings.rows(), active = settings.active();
     clearTimeout(resizeTimer);
     if (!active) {
+      sourceAbort?.abort();
       untrack(() => {
         pause();
         releaseManaged();
@@ -2957,8 +3162,19 @@ function createVideoReader(api, library, settings) {
       if (!api.lifecycle.signal.aborted) void player.resize(columns, rows);
     }, 150);
   });
+  createEffect(() => {
+    const image = useImage();
+    protocol();
+    player.scaleFilter = image ? "lanczos" : "neighbor";
+    inline.clear();
+    setFrame([]);
+    untrack(() => {
+      if (settings.active() && video()) void player.start(player.playing);
+    });
+  });
   async function dispose() {
     ++token;
+    sourceAbort?.abort();
     downloadAbort?.abort();
     resourceWatcher.close();
     clearTimeout(removalTimer);
@@ -2966,99 +3182,128 @@ function createVideoReader(api, library, settings) {
     clearTimeout(resizeTimer);
     save();
     player.dispose();
+    inline.dispose();
+    api.renderer.off("capabilities", capabilitiesChanged);
+    api.renderer.off("resize", capabilitiesChanged);
     await Promise.allSettled([...loads, downloadTask, video()?.release?.()]);
   }
   void sources.cleanup().catch(showError);
+  function ImageSurface() {
+    onCleanup(() => inline.unmount());
+    return (() => {
+      var _el$ = _$createElement("box");
+      _$use((node) => inline.mount(node), _el$);
+      _$setProp(_el$, "width", "100%");
+      _$setProp(_el$, "height", "100%");
+      return _el$;
+    })();
+  }
   function View(props) {
     const Button = props.Button;
     return [(() => {
-      var _el$ = _$createElement("box");
-      _$setProp(_el$, "flexShrink", 0);
-      _$insert(_el$, _$createComponent(Button, {
+      var _el$2 = _$createElement("box");
+      _$setProp(_el$2, "flexShrink", 0);
+      _$insert(_el$2, _$createComponent(Button, {
         get label() {
           return _$memo(() => !!busy())() ? "\u6B63\u5728\u6253\u5F00\u89C6\u9891\u2026" : video()?.title ?? "\u8BF7\u9009\u62E9\u672C\u5730\u89C6\u9891";
         },
         action: shelf
       }), null);
-      _$insert(_el$, _$createComponent(Show, {
+      _$insert(_el$2, _$createComponent(Show, {
         get when() {
-          return downloadProgress();
+          return downloadProgress() || sourceProgress();
         },
         get fallback() {
           return (() => {
-            var _el$7 = _$createElement("text");
-            _$setProp(_el$7, "height", 1);
-            _$setProp(_el$7, "wrapMode", "none");
-            _$insert(_el$7, (() => {
+            var _el$8 = _$createElement("text");
+            _$setProp(_el$8, "height", 1);
+            _$setProp(_el$8, "wrapMode", "none");
+            _$insert(_el$8, (() => {
               var _c$ = _$memo(() => !!error());
-              return () => _c$() ? "\u64AD\u653E\u5F02\u5E38\uFF0C\u53EF\u91CD\u65B0\u6253\u5F00\u89C6\u9891" : _$memo(() => !!!video())() ? "\u50CF\u7D20\u98CE \xB7 \u9ED8\u8BA4\u9759\u97F3" : _$memo(() => !!state().loading)() ? "\u6B63\u5728\u89E3\u7801\u2026" : state().playing ? "\u64AD\u653E\u4E2D \xB7 \u50CF\u7D20\u98CE" : "\u5DF2\u6682\u505C \xB7 \u50CF\u7D20\u98CE";
+              return () => _c$() ? "\u64AD\u653E\u5F02\u5E38\uFF0C\u53EF\u91CD\u65B0\u6253\u5F00\u89C6\u9891" : _$memo(() => !!!video())() ? `${qualityLabel()} \xB7 \u9ED8\u8BA4\u9759\u97F3` : _$memo(() => !!state().loading)() ? "\u6B63\u5728\u89E3\u7801\u2026" : `${state().playing ? "\u64AD\u653E\u4E2D" : "\u5DF2\u6682\u505C"} \xB7 ${qualityLabel()}`;
             })());
-            return _el$7;
+            return _el$8;
           })();
         },
         get children() {
           return _$createComponent(Button, {
             get label() {
-              return `[\u53D6\u6D88] ${downloadProgress()}`;
+              return `[\u53D6\u6D88] ${downloadProgress() || sourceProgress()}`;
             },
-            action: () => downloadAbort?.abort()
+            action: () => {
+              downloadAbort?.abort();
+              sourceAbort?.abort();
+            }
           });
         }
       }), null);
-      _$effect((_$p) => _$setProp(_el$, "height", 2 + props.gap, _$p));
-      return _el$;
+      _$effect((_$p) => _$setProp(_el$2, "height", 2 + props.gap, _$p));
+      return _el$2;
     })(), (() => {
-      var _el$2 = _$createElement("box");
-      _$setProp(_el$2, "flexShrink", 0);
-      _$setProp(_el$2, "alignItems", "center");
-      _$setProp(_el$2, "justifyContent", "center");
-      _$insert(_el$2, _$createComponent(Show, {
+      var _el$3 = _$createElement("box");
+      _$setProp(_el$3, "flexShrink", 0);
+      _$setProp(_el$3, "alignItems", "center");
+      _$setProp(_el$3, "justifyContent", "center");
+      _$insert(_el$3, _$createComponent(Show, {
         get when() {
           return video();
         },
         get fallback() {
           return (() => {
-            var _el$8 = _$createElement("text");
-            _$insertNode(_el$8, _$createTextNode(`\u70B9\u51FB\u300C\u89C6\u9891\u5E93\u300D\u6253\u5F00\u89C6\u9891`));
-            return _el$8;
+            var _el$9 = _$createElement("text");
+            _$insertNode(_el$9, _$createTextNode(`\u70B9\u51FB\u300C\u641C\u7D22\u300D\u6216\u300C\u70ED\u95E8\u300D\u9009\u89C6\u9891`));
+            return _el$9;
           })();
         },
         get children() {
-          var _el$3 = _$createElement("text");
-          _$setProp(_el$3, "selectable", false);
-          _$setProp(_el$3, "wrapMode", "none");
-          _$insert(_el$3, _$createComponent(For, {
-            get each() {
-              return frame();
+          return _$createComponent(Show, {
+            get when() {
+              return useImage();
             },
-            children: (run) => (() => {
-              var _el$0 = _$createElement("span");
-              _$insert(_el$0, () => run.text);
-              _$effect((_$p) => _$setProp(_el$0, "style", {
-                fg: run.fg,
-                bg: run.bg
-              }, _$p));
-              return _el$0;
-            })()
-          }));
-          _$effect((_p$) => {
-            var _v$ = frameSize().width, _v$2 = frameSize().height;
-            _v$ !== _p$.e && (_p$.e = _$setProp(_el$3, "width", _v$, _p$.e));
-            _v$2 !== _p$.t && (_p$.t = _$setProp(_el$3, "height", _v$2, _p$.t));
-            return _p$;
-          }, {
-            e: void 0,
-            t: void 0
+            get fallback() {
+              return (() => {
+                var _el$1 = _$createElement("text");
+                _$setProp(_el$1, "selectable", false);
+                _$setProp(_el$1, "wrapMode", "none");
+                _$insert(_el$1, _$createComponent(For, {
+                  get each() {
+                    return frame();
+                  },
+                  children: (run) => (() => {
+                    var _el$10 = _$createElement("span");
+                    _$insert(_el$10, () => run.text);
+                    _$effect((_$p) => _$setProp(_el$10, "style", {
+                      fg: run.fg,
+                      bg: run.bg
+                    }, _$p));
+                    return _el$10;
+                  })()
+                }));
+                _$effect((_p$) => {
+                  var _v$3 = frameSize().width, _v$4 = frameSize().height;
+                  _v$3 !== _p$.e && (_p$.e = _$setProp(_el$1, "width", _v$3, _p$.e));
+                  _v$4 !== _p$.t && (_p$.t = _$setProp(_el$1, "height", _v$4, _p$.t));
+                  return _p$;
+                }, {
+                  e: void 0,
+                  t: void 0
+                });
+                return _el$1;
+              })();
+            },
+            get children() {
+              return _$createComponent(ImageSurface, {});
+            }
           });
-          return _el$3;
         }
       }));
-      _$effect((_$p) => _$setProp(_el$2, "height", settings.rows(), _$p));
-      return _el$2;
+      _$effect((_$p) => _$setProp(_el$3, "height", settings.rows(), _$p));
+      return _el$3;
     })(), (() => {
-      var _el$4 = _$createElement("box"), _el$5 = _$createElement("box"), _el$6 = _$createElement("box");
+      var _el$4 = _$createElement("box"), _el$5 = _$createElement("box"), _el$6 = _$createElement("box"), _el$7 = _$createElement("box");
       _$insertNode(_el$4, _el$5);
       _$insertNode(_el$4, _el$6);
+      _$insertNode(_el$4, _el$7);
       _$setProp(_el$4, "flexShrink", 0);
       _$insert(_el$4, _$createComponent(Button, {
         get label() {
@@ -3093,10 +3338,17 @@ function createVideoReader(api, library, settings) {
         label: "[\u524D\u8FDB10\u79D2]",
         action: () => seek(10)
       }), null);
+      _$setProp(_el$7, "height", 1);
+      _$insert(_el$7, _$createComponent(Button, {
+        get label() {
+          return `[\u753B\u8D28\uFF1A${qualityLabel()}]`;
+        },
+        action: quality
+      }));
       _$effect((_p$) => {
-        var _v$3 = 4 + props.gap, _v$4 = props.gap;
-        _v$3 !== _p$.e && (_p$.e = _$setProp(_el$4, "height", _v$3, _p$.e));
-        _v$4 !== _p$.t && (_p$.t = _$setProp(_el$4, "paddingTop", _v$4, _p$.t));
+        var _v$ = 4 + props.gap, _v$2 = props.gap;
+        _v$ !== _p$.e && (_p$.e = _$setProp(_el$4, "height", _v$, _p$.e));
+        _v$2 !== _p$.t && (_p$.t = _$setProp(_el$4, "paddingTop", _v$2, _p$.t));
         return _p$;
       }, {
         e: void 0,
@@ -3113,7 +3365,9 @@ function createVideoReader(api, library, settings) {
     restore,
     dispose,
     jump,
-    seek
+    seek,
+    search: searchPlatform,
+    popular
   };
 }
 
@@ -3643,7 +3897,7 @@ var tui = async (api, options) => {
         break;
       }
     }
-    onCleanup(() => {
+    onCleanup2(() => {
       video.pause();
       clearTimeout(mountTimer);
       viewport?.off("resized", measure);
@@ -3710,7 +3964,7 @@ var tui = async (api, options) => {
         _$insertNode2(_el$2, _el$3);
         _$insertNode2(_el$2, _el$8);
         _$insertNode2(_el$2, _el$9);
-        _$use((node) => {
+        _$use2((node) => {
           readerNode = node;
         }, _el$2);
         _$setProp2(_el$2, "flexShrink", 0);
@@ -3762,9 +4016,20 @@ var tui = async (api, options) => {
         }), null);
         _$insert2(_el$8, _$createComponent2(Button, {
           get label() {
-            return mode() === "video" ? "[\u8DF3\u8F6C]" : "[\u76EE\u5F55]";
+            return mode() === "video" ? "[\u641C\u7D22]" : "[\u76EE\u5F55]";
           },
-          action: () => mode() === "video" ? video.jump() : chapters()
+          action: () => mode() === "video" ? video.search() : chapters()
+        }), null);
+        _$insert2(_el$8, _$createComponent2(Show2, {
+          get when() {
+            return mode() === "video";
+          },
+          get children() {
+            return _$createComponent2(Button, {
+              label: "[\u70ED\u95E8]",
+              action: () => video.popular()
+            });
+          }
         }), null);
         _$insert2(_el$8, _$createComponent2(Button, {
           label: "[\u5220\u9664]",

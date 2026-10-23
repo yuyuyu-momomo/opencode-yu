@@ -13849,7 +13849,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.3.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
+          headers: { "User-Agent": "OpenCode-Moyu/0.4.0 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -20817,7 +20817,20 @@ function createVideoPlatforms({ settings, read = createHttpClient({ maxBytes: 10
     const data2 = await bili("/x/web-interface/view", target.id.startsWith("av") ? { aid: target.id.slice(2) } : { bvid: target.id }, signal);
     return { ...target, title: short(data2.title), author: short(data2.owner?.name, 80), description: short(data2.desc, 600), duration: Number(data2.duration) || 0, views: Number(data2.stat?.view) || 0 };
   }
-  return { search, info, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
+  async function popular({ page = 1, signal } = {}) {
+    page = Math.max(1, Math.min(100, Math.floor(Number(page) || 1)));
+    const data2 = await bili("/x/web-interface/popular", { pn: page, ps: 10 }, signal);
+    const items = (data2.list || []).filter((item) => /^BV[\da-zA-Z]{10}$/.test(item.bvid)).slice(0, 10).map((item) => ({
+      platform: "bilibili",
+      id: item.bvid,
+      url: `https://www.bilibili.com/video/${item.bvid}/`,
+      title: short(item.title),
+      author: short(item.owner?.name, 80),
+      duration: Number(item.duration) || 0
+    }));
+    return { items, page, hasMore: !data2.no_more && items.length > 0 && page < 100 };
+  }
+  return { search, info, popular, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
 }
 
 // src/services/video-ingestion.mjs

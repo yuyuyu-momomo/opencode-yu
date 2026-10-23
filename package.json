@@ -1,6 +1,6 @@
 {
   "name": "opencode-moyu",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "OpenCode 原生侧栏小说与像素视频播放器",
   "type": "module",
   "license": "MIT",

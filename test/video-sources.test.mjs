@@ -71,6 +71,21 @@ test("B 站结果去除 HTML 与控制字符，接口拒绝不会伪装为成功
   await assert.rejects(rejected.search({platform:'bilibili',query:'demo'}), /-412/)
 })
 
+test("热门列表无需密钥，分批有界且拒绝或取消不会当作空成功", async () => {
+  const requests=[]
+  const api=createVideoPlatforms({settings:{key:async()=>{throw new Error('must not read key')}},read:async(url,options)=>{
+    requests.push({url,options})
+    return {text:JSON.stringify({code:0,data:{no_more:false,list:Array.from({length:20},()=>({bvid:'BV19Rn26CEco',title:'<b>热门</b>',owner:{name:'作者'},duration:66}))}})}
+  }})
+  const result=await api.popular({page:2})
+  assert.equal(result.items.length,10);assert.equal(result.hasMore,true);assert.equal(result.page,2)
+  assert.equal(result.items[0].title,'热门');assert.equal(new URL(requests[0].url).searchParams.get('pn'),'2')
+  const signal=new AbortController().signal
+  await api.popular({signal});assert.equal(requests[1].options.signal,signal)
+  const failed=createVideoPlatforms({settings:{},read:async()=>{throw new Error('HTTP 412')}})
+  await assert.rejects(failed.popular(),/HTTP 412/)
+})
+
 let downloader
 try { downloader = await downloaderBinary() } catch {}
 test("实际 yt-dlp 离线选格式：横竖屏按短边、无低清回退、未知尺寸和无声视频", {skip:!downloader}, async () => {

@@ -73,5 +73,15 @@ export function createVideoPlatforms({ settings, read = createHttpClient({ maxBy
     const data = await bili("/x/web-interface/view", target.id.startsWith("av") ? { aid: target.id.slice(2) } : { bvid: target.id }, signal)
     return { ...target, title: short(data.title), author: short(data.owner?.name, 80), description: short(data.desc, 600), duration: Number(data.duration) || 0, views: Number(data.stat?.view) || 0 }
   }
-  return { search, info, list: () => [{ id: "bilibili", name: "哔哩哔哩", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] }
+  /** @param {{page?: number, signal?: AbortSignal}} options */
+  async function popular({ page = 1, signal } = {}) {
+    page = Math.max(1, Math.min(100, Math.floor(Number(page) || 1)))
+    const data = await bili("/x/web-interface/popular", { pn: page, ps: 10 }, signal)
+    const items = (data.list || []).filter((item) => /^BV[\da-zA-Z]{10}$/.test(item.bvid)).slice(0, 10).map((item) => ({
+      platform: "bilibili", id: item.bvid, url: `https://www.bilibili.com/video/${item.bvid}/`, title: short(item.title),
+      author: short(item.owner?.name, 80), duration: Number(item.duration) || 0,
+    }))
+    return { items, page, hasMore: !data.no_more && items.length > 0 && page < 100 }
+  }
+  return { search, info, popular, list: () => [{ id: "bilibili", name: "哔哩哔哩", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] }
 }

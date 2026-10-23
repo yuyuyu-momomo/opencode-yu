@@ -1,6 +1,6 @@
 # 框架与接入约定
 
-当前版本实现本地小说、HTML 小说采集、加密资料库、本地及 B 站 / YouTube 视频像素播放。视频与小说在同一侧栏切换；独立音频、图片、直播和数据集展示尚未实现。
+当前版本实现本地小说、HTML 小说采集、加密资料库、本地及 B 站 / YouTube 侧栏视频播放。视频支持原生图片协议和字符回退，与小说在同一侧栏切换；独立音频、图片资料库、直播和数据集展示尚未实现。
 
 ```mermaid
 flowchart LR
@@ -35,15 +35,16 @@ flowchart LR
 | `src/server/collection-context.mjs` | 注入后台采集规则、精简旧搜索结果、压缩请求移除工具定义 |
 | `src/server/search-summary.mjs` | HTTP 搜索结果限量与正文剥离，避免搜索全文进入模型上下文 |
 | `src/ui/index.tsx` | 原生侧栏、书架、阅读进度、删除确认和快捷键 |
-| `src/ui/video.tsx` | 视频库、独立播放进度、静音与切换生命周期、像素画面展示 |
+| `src/ui/video.tsx` | 视频库、搜索 / 热门、画质切换、独立进度及静音生命周期 |
 | `src/sources/local-video.mjs` | 本地视频探测与统一资源索引，保留原文件 |
-| `src/sources/video-platforms.mjs` | B 站 / YouTube 链接规范化、精简搜索和视频信息 |
+| `src/sources/video-platforms.mjs` | B 站 / YouTube 链接规范化、精简搜索、B 站热门和视频信息 |
 | `src/services/video-ingestion.mjs` | 下载器编排、取消、配额、去重、元数据及加密入库 |
 | `src/media/settings.mjs` | 本地加密 YouTube API Key，不向模型公开 |
 | `src/media/cache.mjs` | 流式媒体加密、认证解密、播放临时文件与陈旧文件清理 |
 | `src/media/runtime.mjs` | FFmpeg / ffprobe / ffplay 查找、媒体探测及 WSL 路径适配 |
 | `src/media/player.mjs` | 解码进程、暂停 / 跳转 / 静音、背压和生命周期取消 |
 | `src/media/pixels.mjs` | 有界尺寸、保持比例、半格像素与颜色游程 |
+| `src/media/inline-image.mjs` | 宿主图片能力检测、帧尺寸上限和 NativeImage 引用管理 |
 | `src/ui/collect.mjs` | 解析 /moyu 参数，复用宿主当前模型，将采集任务提交到会话队列 |
 | `src/ui/sidebar-layout.mjs` | 2.x 侧栏宽度适配、会话最小宽度及隐藏 / 卸载时恢复宿主布局 |
 | `src/ui/v2.ts` | 2.x 插槽、存储、键盘、主题和对话框 API 适配 |
@@ -84,7 +85,11 @@ registry.register({
 
 `MediaCache` 使用独立 `MOYUVID1` 文件格式：8 字节魔数、12 字节 nonce、16 字节认证标签及流式密文，密钥沿用资料库 AES-256-GCM。解密输出仅在认证完成且媒体探测成功后交给播放器；失败立即清理。播放临时目录以进程 ID 和随机 ID 命名，权限 0700，文件权限 0600；切模式、隐藏、删除及释放插件时清理，下一次启动清理已退出进程的残留。资源索引删除通知会停止当前视频并清空画面及临时明文，外部本地原文件保留。
 
-`PixelPlayer` 与宿主 UI 无关，FFmpeg 流式输出 RGB24，按 10 帧 / 秒消费；队列通过 stdout 背压限制，尺寸最多 160 × 100 像素，不把整段视频或转码帧写入磁盘。`pixelRuns` 将上下两个像素合并为一个半格字符，颜色量化到 216 色，并合并相邻相同颜色。原视频保持宽高比，终端尺寸改变后从当前进度重新解码。
+`PixelPlayer` 与宿主 UI 无关，FFmpeg 流式输出 RGB24，按 10 帧 / 秒消费，队列通过 stdout 背压限制；UI 注入帧尺寸计算器。像素风最多 160 × 100 像素，`pixelRuns` 将上下两个像素合并为一个半格字符，颜色量化到 216 色。原画根据侧栏实际像素尺寸以 Lanczos 缩放，解码单边最多 1280、总量最多 921600 像素，不超过源分辨率；终端字符回退以列数 × 4、行数 × 8 限制解码尺寸。原视频保持宽高比，终端尺寸或画质变化后从当前进度重新解码，不把转码帧写入磁盘。
+
+`InlineImage` 使用宿主 `ImageRenderable` 与 `NativeImage.fromRgba`，交给宿主处理布局、裁剪、图层和图片协议，不直接写终端转义序列。图片资源归属当前 renderer 的 native scene；逐帧设置 source 后释放临时引用，替换、隐藏、删除和卸载时释放旧引用。宿主上报 Sixel / Kitty 可用时 UI 显示「原画」；有图片组件但只支持字符输出时显示「细腻字符」；缺少图片组件的旧宿主使用原来的像素风。图片加载异常回退像素风并报告，不能把字符回退标成原画。
+
+B 站热门使用独立 HTTP 接口，每页最多 10 项，返回有界标题、作者、时长和规范化链接；不使用 API Key。搜索与热门可取消，切换面板取消未完成请求，通过请求身份检查避免旧响应打开菜单；点击结果仍走原有下载和加密服务。
 
 播放器默认暂停且静音。显式开声后用 `ffplay -nodisp` 播放音轨；暂停、切模式、隐藏、跳转、调整尺寸和释放插件时终止旧进程，异步回调通过代次校验防止旧任务复活。音频失败恢复静音并报错，20 秒无帧停止解码。音画由两个进程输出，非严格同步播放器。视频元数据通过原 `LibraryVault` 加密，进度按资源 ID 单独保存；本地原文件不加密也不删除，平台缓存采用上述流式加密。
 

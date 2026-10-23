@@ -103,7 +103,7 @@ def start(session):
 def has_pixels(text):
     if "随手读" not in text: return False
     column = sidebar_column(text)
-    return '[object Object]' not in text and sum('▀' in line[column:] for line in text.splitlines()) >= 3
+    return '[object Object]' not in text and sum(bool(re.search('[▀-▟]', line[column:])) for line in text.splitlines()) >= 3
 
 media = WORK / "测试 视频.mp4"
 ffmpeg = os.environ["MOYU_FFMPEG"]
@@ -149,6 +149,8 @@ try:
     wait_for(lambda s: "第35章 测试章节35" in s and "[目录]" in s and "· 目录" not in s, "chapter-current-highlighted")
     click("[视频]", "video-mode")
     wait_for(lambda s: "[视频库]" in s, "video-mode-visible")
+    assert '[搜索]' in capture('discovery-buttons') and '[热门]' in capture('discovery-buttons')
+    CHECKS.append('visible-search-and-popular')
     click("[视频库]", "video-shelf")
     wait_for(lambda s: "视频来源设置" in s, "video-source-entry")
     click("视频来源设置", "settings")
@@ -176,6 +178,14 @@ try:
     wait_for(lambda s: "测试网络视频" in s, "encrypted-cache-listed")
     click("测试网络视频", "cached-open")
     wait_for(lambda s: has_pixels(s) and "已暂停" in s and "[开启声音]" in s, "encrypted-video-pixels")
+    click('[画质', 'quality-menu')
+    wait_for(lambda s: '侧栏视频画质' in s and '自动清晰' in s, 'inline-quality-menu')
+    click('像素风', 'pixel-quality')
+    wait_for(lambda s: '[画质：像素风]' in s and has_pixels(s), 'pixel-mode-compatible')
+    click('[画质', 'quality-return')
+    wait_for(lambda s: '侧栏视频画质' in s, 'quality-reopen')
+    click('自动清晰', 'native-quality')
+    wait_for(lambda s: '[画质：细腻字符]' in s and has_pixels(s), 'native-blocks-fallback-honest')
     playback = CONFIG / "extensions/opencode-moyu/books/.moyu/playback"
     assert list(playback.glob("*/video.mp4"))
     click("[小说]", "cache-leave")

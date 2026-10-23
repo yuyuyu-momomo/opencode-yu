@@ -3,11 +3,12 @@ import { pixelSize } from "./pixels.mjs"
 
 /** Decoder owns no UI or files. One bounded frame queue, no full-video conversion. */
 export class PixelPlayer {
-  constructor({ onFrame = (_frame, _size) => {}, onState = (_state) => {}, onError = (_error) => {}, binary = mediaBinary, launch = launchMedia } = {}) {
+  constructor({ onFrame = (_frame, _size) => {}, onState = (_state) => {}, onError = (_error) => {}, binary = mediaBinary, launch = launchMedia, frameSize = pixelSize } = {}) {
     this.onFrame = onFrame; this.onState = onState; this.onError = onError
     this.binary = binary; this.launch = launch; this.generation = 0
     this.position = 0; this.playing = false; this.muted = true; this.fps = 10
     this.columns = 36; this.rows = 16; this.disposed = false
+    this.frameSize = frameSize; this.scaleFilter = "neighbor"
   }
   emit() { this.onState({ position: this.position, playing: this.playing, muted: this.muted, loading: this.loading || false }) }
   load(video, position = 0) {
@@ -53,8 +54,8 @@ export class PixelPlayer {
     try {
       const binary = await this.binary("ffmpeg"), path = await nativeMediaPath(binary, video.path)
       if (token !== this.generation || this.disposed) return
-      const size = pixelSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3
-      const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=neighbor,setsar=1`, ...(!playing ? ["-frames:v", "1"] : []), "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
+      const size = this.frameSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3
+      const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=${this.scaleFilter},setsar=1`, ...(!playing ? ["-frames:v", "1"] : []), "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
       const child = this.decoder = this.launch(binary, args)
       let buffer = Buffer.alloc(0), stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now()
       let nextFrameAt

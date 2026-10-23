@@ -1460,7 +1460,7 @@ if (!values.remove) {
     await copyFile(source, temporary, constants.COPYFILE_EXCL);
     await rename(temporary, destination);
   }
-  await writeFile(join(installedRoot, "package.json"), JSON.stringify({ name: "opencode-moyu", version: "0.3.1", type: "module", exports: { ".": "./dist/server-v2.js", "./tui": "./dist/tui-v2.js" } }, null, 2) + "\n", { mode: 384 });
+  await writeFile(join(installedRoot, "package.json"), JSON.stringify({ name: "opencode-moyu", version: "0.4.0", type: "module", exports: { ".": "./dist/server-v2.js", "./tui": "./dist/tui-v2.js" } }, null, 2) + "\n", { mode: 384 });
   await writeFile(join(installedRoot, "index.js"), 'export { default } from "./dist/server-v2.js"\n', { mode: 384 });
   await writeFile(join(installedRoot, "tui.js"), 'export { default } from "./dist/tui-v2.js"\n', { mode: 384 });
   const sample = join(tui.settings.booksDir, "\u591C\u73ED\u4FBF\u5229\u5E97.txt");
