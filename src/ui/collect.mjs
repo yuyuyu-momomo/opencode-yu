@@ -15,15 +15,11 @@ export async function requestCollection(host, input) {
   if (!selected) throw new Error("请先在 OpenCode 中选择可用模型")
   const model = { providerID: selected.providerID, id: selected.modelID, ...(selected.variant ? { variant: selected.variant } : {}) }
   const route = host.ui.router.current()
-  let sessionID
-  if (route.type === "session") {
-    sessionID = route.sessionID
-    await host.client.session.switchModel({ sessionID, model })
-  } else {
-    const session = await host.client.session.create({ title: `Moyu · ${query.slice(0, 50)}`, location: host.location ?? host.data.location.default(), model })
-    sessionID = session.id
-    host.ui.router.navigate({ type: "session", sessionID })
-  }
+  // Keep the task in an ordinary session: native parentID would turn it into a
+  // subagent view whose composer is hidden. Link the source through metadata.
+  const session = await host.client.session.create({ title: `Moyu · ${query.slice(0, 50)}`, location: host.location ?? host.data.location.default(), model, metadata: { origin: "moyu", ...(route.type === "session" ? { sourceSessionID: route.sessionID } : {}) } })
+  const sessionID = session.id
+  host.ui.router.navigate({ type: "session", sessionID })
   await host.client.session.prompt({ sessionID, text: collectionPrompt(query), delivery: "queue", metadata: { origin: "moyu", query } })
   return sessionID
 }

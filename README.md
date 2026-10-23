@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.4.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.5.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -56,13 +56,15 @@ OpenCode 2.x 中，在输入框提交：
 
 聊天区只显示一句 `采集小说：你输入的书名或要求`。HTTP 采集方式、工具调用及失败处理规则放在后台模型上下文中，不再作为长段用户消息显示。
 
-插件会把采集任务交给当前选中的模型，在当前会话排队执行；从首页发起会创建会话。模型查找来源、核对目录，再分批存进加密书架，不需要另配 API 密钥。采集进度和错误在 OpenCode 对话中显示；完成后输入 `/moyu` 选择小说阅读。默认先采集 20 章，也可在要求中指定数量。请在可联网并允许工具执行的 agent 中使用；访问授权沿用 OpenCode 的现有设置。
+插件会沿用当前选中的模型，每次采集创建一个独立的普通会话，不携带编程对话历史，避免先触发旧会话压缩。原会话保留，可从会话列表返回。模型查找来源、核对目录，再分批存进加密书架，不需要另配 API 密钥。采集进度和错误在 OpenCode 对话中显示；完成后输入 `/moyu` 选择小说阅读。目录默认只返回 10 章，正文在插件内部提取并分批加密入库，交给右侧阅读器显示。默认先采集 20 章，也可在要求中指定数量。请在可联网并允许工具执行的 agent 中使用；访问授权沿用 OpenCode 的现有设置。
 
-采集任务限定为纯 HTTP/HTTPS：目录和正文由插件直接下载、解析并加密入库。`/moyu` 在后台注入的模型规则明确禁止浏览器、无头浏览器、Playwright、Selenium、CDP、浏览器 MCP，以及依赖浏览器的搜索技能。只有书名时可使用已有的 HTTP 搜索接口；搜索接口不可用时报告缺少目录链接，不安装浏览器或搜索环境。目录为空、需要 JavaScript、登录或验证码时停止该来源，不回退浏览器、不加载整页 HTML 到模型上下文。
+采集任务限定为纯 HTTP/HTTPS：目录和正文由插件直接下载、解析并加密入库。`/moyu` 在后台注入的模型规则明确禁止浏览器、无头浏览器、Playwright、Selenium、CDP、浏览器 MCP，以及依赖浏览器的搜索技能。只有书名时使用内置 `moyu_search` 调用已有的 HTTP 搜索接口；搜索接口不可用时报告缺少目录链接，不安装浏览器或搜索环境。目录为空、需要 JavaScript、登录或验证码时停止该来源，不回退浏览器、不加载整页 HTML 到模型上下文。
 
 1.19.x 仍支持采集工具，在普通对话中向模型提出同样要求即可。
 
-模型可调用 `moyu_sources` 查看来源能力、`moyu_catalog` 查看目录、`moyu_import` 分批采集、`moyu_library` 查看资源、`moyu_delete` 删除用户指定的资源。相同 URL 重复采集会续接未完成章节，成功章节不重复下载；抓到的书按 `Alt+O` 即可打开。
+2.x 内置 `moyu_search`，复用 OpenCode 的 HTTP 搜索接口，最多返回 5 条标题、链接和短摘要，省去网页全文。默认使用 Exa，可通过插件选项 `searchProvider` 指定 `exa`、`tavily`、`parallel` 或 `firecrawl`。
+
+模型可调用 `moyu_search` 查找来源、`moyu_sources` 查看来源能力、`moyu_catalog` 查看目录、`moyu_import` 分批采集、`moyu_library` 查看资源、`moyu_delete` 删除用户指定的资源。相同 URL 重复采集会续接未完成章节，成功章节不重复下载；抓到的书按 `Alt+O` 即可打开。
 
 默认适配器支持可直接访问的 HTML 目录和正文页，可指定 `catalogSelector` / `contentSelector` 适配网站。不会执行页面脚本；登录、验证码、动态渲染页面和分页目录需要专用来源适配器。访问来源沿用 OpenCode 的 `webfetch` 权限。工具返回进度和路径摘要，正文留在本地资料库。
 

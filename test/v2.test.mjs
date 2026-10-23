@@ -27,7 +27,8 @@ test("2.x 模型工具保留参数校验、服务执行及权限拒绝", async (
   })
   try {
     assert.ok(hooks.has("context"))
-    assert.deepEqual([...tools.keys()].sort(), ["moyu_catalog", "moyu_delete", "moyu_import", "moyu_library", "moyu_sources"])
+    assert.ok(hooks.has("compaction"))
+    assert.deepEqual([...tools.keys()].sort(), ["moyu_catalog", "moyu_delete", "moyu_import", "moyu_library", "moyu_search", "moyu_sources"])
     const sources = JSON.parse((await tools.get("moyu_sources").execute({}, context)).content)
     assert.equal(sources[0].id, "html-novel")
     const shelf = JSON.parse((await tools.get("moyu_library").execute({}, context)).content)

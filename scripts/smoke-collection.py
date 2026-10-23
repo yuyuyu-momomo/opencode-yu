@@ -42,16 +42,18 @@ class MockModel(BaseHTTPRequestHandler):
         data = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         REQUESTS.append(data)
         (WORK / "model-requests.json").write_text(json.dumps(REQUESTS, ensure_ascii=False))
+        last = next((content(message) for message in reversed(data.get("messages", [])) if message["role"] == "user"), "")
+        reply = "## Objective\n- Test collection.\n## Requirements\n- HTTP only.\n## Decisions\n- Local test.\n## Work State\n### Completed\n- Request received.\n### Active\n- (none)\n### Blocked\n- (none)\n## Next Move\n1. Continue test.\n## Relevant Files\n(none)\n## Important Context\n- No external model." if "structured summary" in last else "已收到。"
         if data.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            for delta, finish in [({"role": "assistant", "content": "已收到。"}, None), ({}, "stop")]:
+            for delta, finish in [({"role": "assistant", "content": reply}, None), ({}, "stop")]:
                 part = {"id": "moyu-mock", "object": "chat.completion.chunk", "created": int(time.time()), "model": "moyu-mock", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
                 self.wfile.write(("data: " + json.dumps(part, ensure_ascii=False) + "\n\n").encode())
             self.wfile.write(b"data: [DONE]\n\n")
         else:
-            body = json.dumps({"id": "moyu-mock", "object": "chat.completion", "created": int(time.time()), "model": "moyu-mock", "choices": [{"index": 0, "message": {"role": "assistant", "content": "已收到。"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105}}).encode()
+            body = json.dumps({"id": "moyu-mock", "object": "chat.completion", "created": int(time.time()), "model": "moyu-mock", "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105}}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -137,6 +139,10 @@ try:
     time.sleep(0.3)
     tmux("send-keys", "-t", "reader:0.0", "Enter")
     wait_for(lambda: model_request(SHORT) is not None, "slash-reaches-local-model")
+    parent = session
+    tasks = api("/api/session")["data"]
+    session = next(item["id"] for item in tasks if item.get("metadata", {}).get("sourceSessionID") == parent)
+    CHECKS.append("collection-uses-fresh-session")
     request = model_request(SHORT)
     system = "\n".join(content(message) for message in request["messages"] if message["role"] in ["system", "developer"])
     assert "禁止打开或操控浏览器" in system and "moyu_import" in system
@@ -149,6 +155,11 @@ try:
     assert len(users) == 1 and users[0]["text"] == SHORT
     assert users[0]["metadata"]["origin"] == "moyu"
     CHECKS.append("history-has-no-internal-rules")
+    api(f"/api/session/{session}/compact", {})
+    wait_for(lambda: any(message["type"] == "compaction" and message.get("status") == "completed" for message in api(f"/api/session/{session}/message?order=asc")["data"]), "moyu-compaction-returns-summary")
+    summary_requests = [request for request in REQUESTS if "structured summary" in content(request.get("messages", [{}])[-1])]
+    assert summary_requests and all(not request.get("tools") for request in summary_requests)
+    CHECKS.append("moyu-compaction-has-no-tools")
     tmux("send-keys", "-t", "reader:0.0", "-l", FOLLOWUP)
     tmux("send-keys", "-t", "reader:0.0", "Enter")
     wait_for(lambda: model_request(FOLLOWUP) is not None, "ordinary-followup")

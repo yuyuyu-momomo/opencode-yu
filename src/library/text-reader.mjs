@@ -35,12 +35,35 @@ export function cleanText(text) {
     .replace(/^\uFEFF/, "")
 }
 
+function chapterIdentity(title) {
+  const match = title.normalize("NFKC").match(/^第([零〇一二三四五六七八九十百千万两\d]+)([章节回卷部篇集])(.*)$/u)
+  if (!match) return title
+  const digits = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
+  const units = { 十: 10, 百: 100, 千: 1000, 万: 10000 }
+  let total = 0, section = 0, digit = 0
+  if (/^\d+$/u.test(match[1])) total = Number(match[1])
+  else {
+    for (const char of match[1]) {
+      if (char in digits) digit = digits[char]
+      else if (units[char] === 10000) { total += (section + digit) * 10000; section = 0; digit = 0 }
+      else if (units[char]) { section += (digit || 1) * units[char]; digit = 0 }
+      else return title
+    }
+    total += section + digit
+  }
+  return `${total}:${match[2]}:${match[3].replace(/\s+/gu, "")}`
+}
+
 export function chaptersOf(text) {
   const chapters = []
-  let offset = 0
+  let offset = 0, headingEnd = 0
   for (const line of text.split("\n")) {
     const title = line.trim()
-    if (title.length <= 100 && chapterPattern.test(title)) chapters.push({ title, offset })
+    if (title.length <= 100 && chapterPattern.test(title)) {
+      const previous = chapters.at(-1)
+      if (!previous || chapterIdentity(previous.title) !== chapterIdentity(title) || text.slice(headingEnd, offset).trim()) chapters.push({ title, offset })
+      headingEnd = offset + line.length
+    }
     offset += line.length + 1
   }
   return chapters

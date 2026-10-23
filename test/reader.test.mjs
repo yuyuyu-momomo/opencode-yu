@@ -52,6 +52,17 @@ test("UTF-8、UTF-16 和 GBK 小说均可解码", () => {
   assert.equal(decodeBook(Buffer.from([0xfe, 0xff, 0x4f, 0x60, 0x59, 0x7d])), "你好")
 })
 
+test("采集标题与正文的数字写法不同不会生成重复目录，实际章节和偏移仍保留", () => {
+  const text = "第1章 雨夜\n\n第一章 雨夜\n正文\n第20章 青牛镇\n第二十章 青牛镇\n正文\n第21章 青牛镇\n第二十一章 青牛镇\n正文\n第100章 重逢\n第一百章 重逢\n正文"
+  const chapters = chaptersOf(text)
+  assert.deepEqual(chapters.map((chapter) => chapter.title), ["第1章 雨夜", "第20章 青牛镇", "第21章 青牛镇", "第100章 重逢"])
+  for (const chapter of chapters) assert.ok(text.slice(chapter.offset).startsWith(chapter.title))
+  assert.equal(chaptersOf("第1章 序\n第二章 序").length, 2)
+  assert.equal(chaptersOf("第17章 归来(1)\n第十七章 归来（1）\n正文").length, 1)
+  assert.equal(chaptersOf("  第1章 雨夜  \n\n 第一章 雨夜\n第1章 雨夜\n正文").length, 1)
+  assert.equal(chaptersOf("第1章 雨夜\n正文\n第一章 雨夜\n正文").length, 2)
+})
+
 test("移除控制序列，同时保留换行和正文", () => {
   assert.equal(cleanText("\ufeff正文\r\n\x1b[31m红色\x1b[0m\x1b]0;title\x07\x00\t后文"), "正文\n红色    后文")
 })

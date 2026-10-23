@@ -396,12 +396,39 @@ function decodeBook(bytes) {
 function cleanText(text) {
   return text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/\r\n?/g, "\n").replace(/\t/g, "    ").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "").replace(/^\uFEFF/, "");
 }
+function chapterIdentity(title) {
+  const match = title.normalize("NFKC").match(/^第([零〇一二三四五六七八九十百千万两\d]+)([章节回卷部篇集])(.*)$/u);
+  if (!match) return title;
+  const digits = { \u96F6: 0, "\u3007": 0, \u4E00: 1, \u4E8C: 2, \u4E24: 2, \u4E09: 3, \u56DB: 4, \u4E94: 5, \u516D: 6, \u4E03: 7, \u516B: 8, \u4E5D: 9 };
+  const units = { \u5341: 10, \u767E: 100, \u5343: 1e3, \u4E07: 1e4 };
+  let total = 0, section = 0, digit = 0;
+  if (/^\d+$/u.test(match[1])) total = Number(match[1]);
+  else {
+    for (const char of match[1]) {
+      if (char in digits) digit = digits[char];
+      else if (units[char] === 1e4) {
+        total += (section + digit) * 1e4;
+        section = 0;
+        digit = 0;
+      } else if (units[char]) {
+        section += (digit || 1) * units[char];
+        digit = 0;
+      } else return title;
+    }
+    total += section + digit;
+  }
+  return `${total}:${match[2]}:${match[3].replace(/\s+/gu, "")}`;
+}
 function chaptersOf(text) {
   const chapters = [];
-  let offset = 0;
+  let offset = 0, headingEnd = 0;
   for (const line of text.split("\n")) {
     const title = line.trim();
-    if (title.length <= 100 && chapterPattern.test(title)) chapters.push({ title, offset });
+    if (title.length <= 100 && chapterPattern.test(title)) {
+      const previous = chapters.at(-1);
+      if (!previous || chapterIdentity(previous.title) !== chapterIdentity(title) || text.slice(headingEnd, offset).trim()) chapters.push({ title, offset });
+      headingEnd = offset + line.length;
+    }
     offset += line.length + 1;
   }
   return chapters;

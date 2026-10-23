@@ -19,13 +19,16 @@ function fixture(route = { type: "session", sessionID: "current-session" }) {
   return { host, calls }
 }
 
-test("/moyu 采集请求复用当前模型，在当前会话排队且只显示一句采集要求", async () => {
+test("/moyu 复用当前模型新建轻量采集会话，不携带原会话历史且只显示一句要求", async () => {
   const { host, calls } = fixture()
-  assert.equal(await requestCollection(host, "/moyu 忘语的凡人修仙传，先采集20章"), "current-session")
-  assert.equal(calls[0][0], "model")
+  assert.equal(await requestCollection(host, "/moyu 忘语的凡人修仙传，先采集20章"), "new-session")
+  assert.equal(calls[0][0], "create")
+  assert.equal(calls[0][1].metadata.sourceSessionID, "current-session")
+  assert.equal(calls[0][1].parentID, undefined)
   assert.deepEqual(calls[0][1].model, { providerID: "selected-provider", id: "selected-model", variant: "high" })
-  const request = calls[1][1]
-  assert.equal(request.sessionID, "current-session")
+  assert.deepEqual(calls.map(([name]) => name), ["create", "navigate", "prompt"])
+  const request = calls[2][1]
+  assert.equal(request.sessionID, "new-session")
   assert.equal(request.delivery, "queue")
   assert.equal(request.text, "采集小说：忘语的凡人修仙传，先采集20章")
   assert.equal(request.text.split("\n").length, 1)
