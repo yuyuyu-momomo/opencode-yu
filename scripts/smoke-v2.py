@@ -58,20 +58,41 @@ def wait_for(predicate, name, timeout=30):
         time.sleep(0.25)
     raise AssertionError(f"{name}\n{value}")
 
-def open_size():
-    tmux("send-keys", "-t", "reader:0.0", "C-x")
-    tmux("send-keys", "-t", "reader:0.0", "j")
+def click(label, name, hold=False):
+    value = capture(name + "-before")
+    row, line = min(((i, line) for i, line in enumerate(value.splitlines()) if label in line), key=lambda item: item[1].index(label))
+    prefix = line[:line.index(label)]
+    column = sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in prefix) + 2
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{column};{row + 1}M")
+    time.sleep(.25 if hold else .1)
+    if hold:
+        assert "· 目录" not in capture(name + "-held"), "Menu must not open on mouse-down"
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{column};{row + 1}m")
+    time.sleep(.15)
+
 
 def footer_rows(text):
     lines = text.splitlines()
-    return tuple(next(i for i, line in enumerate(lines) if label in line) for label in ["页 ·", "上一页", "Ctrl+X J 大小"])
+    return tuple(next(i for i, line in enumerate(lines) if label in line) for label in ["页 ·", "上一页", "点击上方按钮"])
+
 
 def choose_height(percent, name):
-    open_size()
-    wait_for(lambda text: "阅读区域大小" in text, name + "-menu")
-    tmux("send-keys", "-t", "reader:0.0", "-l", f"高度 {percent}%")
-    tmux("send-keys", "-t", "reader:0.0", "Enter")
-    return wait_for(lambda text: f"大小 {percent}%" in text and "阅读区域大小" not in text, name)
+    click("[高度", name + "-open")
+    wait_for(lambda text: "阅读区高度" in text, name + "-menu")
+    click(f"高度 {percent}%", name + "-select")
+    return wait_for(lambda text: f"[高度 {percent}%]" in text and "阅读区高度" not in text, name)
+
+
+def choose_width(percent, name):
+    click("[宽度", name + "-open")
+    wait_for(lambda text: "阅读区宽度" in text, name + "-menu")
+    click(f"宽度 {percent}%", name + "-select")
+    return wait_for(lambda text: f"[宽度 {percent}%]" in text and "阅读区宽度" not in text, name)
+
+
+def sidebar_column(text):
+    return next(line.index("随手读") for line in text.splitlines() if "随手读" in line)
+
 
 def start(session):
     command = shlex.join(["env", *[f"{key}={value}" for key, value in ENV.items() if key.startswith(("XDG_", "OPENCODE_"))], "TERM=xterm-256color", BINARY, "--server", URL, "--session", session, str(PROJECT)])
@@ -133,25 +154,32 @@ try:
     start(session)
     wait_for(lambda text: "随手读" in text and "2 /" in text, "restart-resume")
     initial = capture("before-size")
-    row, line = next((i, line) for i, line in enumerate(initial.splitlines()) if "随手读" in line)
-    prefix = line[:line.index("大小")]
-    column = sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in prefix) + 1
-    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m")
-    wait_for(lambda text: "阅读区域大小" in text, "click-size")
-    tmux("send-keys", "-t", "reader:0.0", "Escape")
-    wait_for(lambda text: "阅读区域大小" not in text and "随手读" in text, "close-click-size")
+    original_column = sidebar_column(initial)
+    click("[目录]", "chapter-press-release", hold=True)
+    wait_for(lambda text: "夜班便利店 · 目录" in text, "click-chapters-stays-open")
+    time.sleep(.7)
+    assert "夜班便利店 · 目录" in capture("chapter-after-release")
+    click("第二章 一张没有日期的小票", "choose-second-chapter")
+    wait_for(lambda text: "夜班便利店 · 目录" not in text and "第二章 一张没有日期的小票" in text, "mouse-selects-chapter")
+    click("[书架]", "click-shelf")
+    wait_for(lambda text: "书架 · 摸鱼阅读" in text, "click-bookshelf-stays-open")
+    click("夜班便利店", "choose-book")
+    wait_for(lambda text: "书架 · 摸鱼阅读" not in text and "随手读" in text, "mouse-selects-book")
+    choose_width(50, "width-50")
+    wide = wait_for(lambda text: sidebar_column(text) < original_column - 20, "sidebar-actually-widens")
+    assert "第二章 一张没有日期的小票" in wide
+    assert int(re.search(r"\d+ / (\d+) 页", wide)[1]) < int(re.search(r"\d+ / (\d+) 页", initial)[1]), "Wider body must reflow pagination"
+    click("[隐藏]", "click-hide")
+    wait_for(lambda text: "[显示阅读]" in text and "随手读" not in text, "mouse-hides-reader")
+    hidden = capture("hidden-width")
+    assert next(line.index("[显示阅读]") for line in hidden.splitlines() if "[显示阅读]" in line) == original_column
+    click("[显示阅读]", "click-show")
+    wait_for(lambda text: "随手读" in text and sidebar_column(text) < original_column - 20, "mouse-restores-reader-width")
     choose_height(25, "height-25")
     time.sleep(0.5)
     small_footer = footer_rows(capture("height-25-layout"))
-    open_size()
-    wait_for(lambda text: "阅读区域大小" in text, "size-menu")
-    tmux("send-keys", "-t", "reader:0.0", "-l", "自定义")
-    tmux("send-keys", "-t", "reader:0.0", "Enter")
-    wait_for(lambda text: "阅读区高度 · 输入 10–100%" in text, "custom-height")
-    tmux("send-keys", "-t", "reader:0.0", "-l", "75")
-    tmux("send-keys", "-t", "reader:0.0", "Enter")
-    wait_for(lambda text: "大小 75%" in text and "阅读区高度 · 输入" not in text, "height-applied")
-    enlarged = wait_for(lambda text: "阅读区域大小" not in text and all(a > b for a, b in zip(footer_rows(text), small_footer)), "footer-moves-with-height")
+    choose_height(75, "height-75")
+    enlarged = wait_for(lambda text: "阅读区高度" not in text and all(a > b for a, b in zip(footer_rows(text), small_footer)), "footer-moves-with-height")
     medium_footer = footer_rows(enlarged)
     assert len(set(a - b for a, b in zip(medium_footer, small_footer))) == 1
     choose_height(100, "height-100")
@@ -170,16 +198,24 @@ try:
     tmux("kill-session", "-t", "reader")
     time.sleep(1)
     start(session)
-    wait_for(lambda text: "大小 75%" in text and any("随手读" in line and line.index("随手读") > 110 for line in text.splitlines()), "restart-height")
+    wait_for(lambda text: "[高度 75%]" in text and "[宽度 50%]" in text and sidebar_column(text) < original_column - 20, "restart-height")
     tmux("resize-window", "-t", "reader", "-x", "145", "-y", "32")
-    wait_for(lambda text: len(text.splitlines()) == 32 and "大小 75%" in text and "下一页" in text, "compact-with-height")
+    wait_for(lambda text: len(text.splitlines()) == 32 and "[高度 75%]" in text and "下一页" in text, "compact-with-height")
     tmux("resize-window", "-t", "reader", "-x", "160", "-y", "54")
-    wait_for(lambda text: len(text.splitlines()) == 54 and "大小 75%" in text and "下一页" in text, "resize-with-height")
-    open_size()
-    wait_for(lambda text: "阅读区域大小" in text, "size-menu-reset")
-    tmux("send-keys", "-t", "reader:0.0", "-l", "自动高度")
-    tmux("send-keys", "-t", "reader:0.0", "Enter")
-    wait_for(lambda text: "随手读" in text and "阅读区域大小" not in text and "大小 75%" not in text, "reset-height")
+    wait_for(lambda text: len(text.splitlines()) == 54 and "[高度 75%]" in text and "下一页" in text, "resize-with-height")
+    time.sleep(.7)  # Let the renderer finish its resize frames before hit testing.
+    wait_for(lambda text: sidebar_column(text) == sidebar_column(wide), "width-proportion-after-resize")
+    click("[高度", "height-reset-open")
+    wait_for(lambda text: "阅读区高度" in text, "size-menu-reset")
+    click("自动高度", "height-reset-select")
+    wait_for(lambda text: "[高度 自动]" in text and "阅读区高度" not in text, "reset-height")
+    click("[宽度", "width-reset-open")
+    wait_for(lambda text: "阅读区宽度" in text, "width-menu-reset")
+    click("默认宽度", "width-reset-select")
+    wait_for(lambda text: "[宽度 自动]" in text and sidebar_column(text) == original_column, "reset-width")
+    before_page = int(re.search(r"(\d+) / \d+ 页", capture("before-mouse-prev"))[1])
+    click("[‹ 上一页]", "mouse-prev")
+    wait_for(lambda text: (match := re.search(r"(\d+) / \d+ 页", text)) and int(match[1]) == before_page - 1, "mouse-page-turn")
     print(json.dumps({"checks": CHECKS, "artifacts": str(WORK)}, ensure_ascii=False), flush=True)
 finally:
     tmux("kill-server", check=False)

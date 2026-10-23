@@ -166,7 +166,7 @@ console.log(await hooks.tool.moyu_delete.execute({id:process.argv[3]},{ask:async
     latest = max(library_dir.glob("*.moyubook"), key=lambda path: path.stat().st_mtime_ns)
     options = json.loads((CONFIG / "opencode.json").read_text())["plugin"][0][1]
     subprocess.run(["node", "--input-type=module", "-e", delete_code, str(CONFIG / "extensions/opencode-moyu/dist/server.js"), json.dumps(options), latest.stem], check=True, capture_output=True)
-    wait_for(lambda s: "中文测试" not in s and "Alt+O 打开本地小说" in s, "19b-model-delete-clears-sidebar")
+    wait_for(lambda s: "中文测试" not in s and "点击打开本地小说" in s, "19b-model-delete-clears-sidebar")
     assert custom.exists()
     assert not latest.exists()
     with urllib.request.urlopen(url + f"/session/{session}/message", timeout=5) as response:

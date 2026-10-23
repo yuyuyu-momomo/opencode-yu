@@ -34,11 +34,11 @@ var require_emoji_regex = __commonJS({
 });
 
 // src/ui/index.tsx
-import { effect as _$effect } from "@opentui/solid";
-import { insert as _$insert } from "@opentui/solid";
 import { memo as _$memo } from "@opentui/solid";
 import { createTextNode as _$createTextNode } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
+import { effect as _$effect } from "@opentui/solid";
+import { insert as _$insert } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
@@ -496,6 +496,38 @@ async function listBooks(directory, { keyFile } = {}) {
   return [...managed, ...plain.filter((item) => !managed.some((saved) => saved.title === item.title))];
 }
 
+// src/ui/sidebar-layout.mjs
+function sidebarLayout(scrollbox) {
+  const sidebar = scrollbox.parent;
+  const pane = sidebar?.parent;
+  const frame = pane?.parent;
+  const docked = frame?.getChildren().some((node) => node.id === "session-pane");
+  if (!sidebar || sidebar.width < 32 || sidebar.width > 100 || !sidebar.getChildren().includes(scrollbox)) return;
+  if (docked && (pane.width !== sidebar.width || pane.getChildren().length !== 1)) return;
+  const targets = (docked ? [sidebar, pane] : [sidebar]).map((node) => ({ node, original: node.width, applied: void 0 }));
+  function restore() {
+    for (const item of targets) {
+      if (!item.node.isDestroyed && item.applied !== void 0 && item.node.width === item.applied) item.node.width = item.original;
+      item.applied = void 0;
+    }
+  }
+  return {
+    frame: docked ? frame : void 0,
+    apply(percent, terminalWidth) {
+      if (percent === void 0) return restore();
+      const total = docked ? Math.max(1, terminalWidth - (frame.screenX ?? frame.x ?? 0)) : terminalWidth;
+      const max = Math.max(36, Math.min(Math.floor(total * 0.6), total - 44));
+      const width = Math.max(36, Math.min(max, Math.round(total * percent / 100)));
+      for (const item of targets) {
+        if (item.node.isDestroyed) continue;
+        if (item.node.width !== width) item.node.width = width;
+        item.applied = width;
+      }
+    },
+    restore
+  };
+}
+
 // src/ui/index.tsx
 var prefix = "opencode-moyu:";
 var pluginRoot = resolve3(dirname3(fileURLToPath(import.meta.url)), "..");
@@ -513,13 +545,17 @@ var tui = async (api, options) => {
   const [book, setBook] = createSignal();
   const [offset, setOffset] = createSignal(0);
   const [height, setHeight] = createSignal(api.renderer.height);
+  const [width, setWidth] = createSignal(api.renderer.width);
+  const [bodyWidth, setBodyWidth] = createSignal(36);
   const [busy, setBusy] = createSignal(false);
   const [heightPercent, setHeightPercent] = createSignal();
+  const [widthPercent, setWidthPercent] = createSignal();
   const [viewportHeight, setViewportHeight] = createSignal();
   const onboarding = createMemo(() => options?.hostMajor === 2 || !api.kv.get("dismissed_getting_started", false) && !api.state.provider.some((provider) => provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost?.input !== 0)));
-  const availableRows = createMemo(() => Math.max(4, viewportHeight() === void 0 ? height() - (onboarding() ? 31 : 20) : viewportHeight() - (height() < 40 ? 6 : 11)));
+  const chromeRows = () => height() < 40 ? 8 : 11;
+  const availableRows = createMemo(() => Math.max(4, viewportHeight() === void 0 ? height() - (onboarding() ? 31 : 20) : viewportHeight() - chromeRows()));
   const rows = createMemo(() => heightPercent() === void 0 ? Math.min(fixedRows ?? 24, availableRows()) : Math.max(4, Math.floor(availableRows() * heightPercent() / 100)));
-  const pages = createMemo(() => paginate(book()?.text ?? "", 36, rows()));
+  const pages = createMemo(() => paginate(book()?.text ?? "", bodyWidth(), rows()));
   const page = createMemo(() => pageAt(pages(), offset()));
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "\u6B63\u6587");
   let request = 0;
@@ -704,11 +740,11 @@ var tui = async (api, options) => {
       }
     }));
   }
-  function size() {
+  function heightSize() {
     const selected = heightPercent() === void 0 ? "auto" : String(heightPercent());
     dialog(() => _$createComponent(api.ui.DialogSelect, {
-      title: "\u9605\u8BFB\u533A\u57DF\u5927\u5C0F",
-      placeholder: "\u8C03\u6574\u5C0F\u8BF4\u5728\u53F3\u4FA7\u680F\u4E2D\u7684\u9AD8\u5EA6\uFF0C\u8BBE\u7F6E\u81EA\u52A8\u4FDD\u5B58",
+      title: "\u9605\u8BFB\u533A\u9AD8\u5EA6",
+      placeholder: "\u70B9\u51FB\u9009\u62E9\u9AD8\u5EA6\uFF0C\u8BBE\u7F6E\u81EA\u52A8\u4FDD\u5B58",
       get options() {
         return [{
           title: "\u81EA\u52A8\u9AD8\u5EA6",
@@ -732,7 +768,57 @@ var tui = async (api, options) => {
       }
     }));
   }
-  const resize = () => setHeight(api.renderer.height);
+  function widthSize() {
+    const selected = widthPercent() === void 0 ? "auto" : String(widthPercent());
+    dialog(() => _$createComponent(api.ui.DialogSelect, {
+      title: "\u9605\u8BFB\u533A\u5BBD\u5EA6",
+      placeholder: "\u70B9\u51FB\u9009\u62E9\u4FA7\u680F\u5BBD\u5EA6\uFF0C\u6309\u4F1A\u8BDD\u53EF\u7528\u5BBD\u5EA6\u8BA1\u7B97",
+      get options() {
+        return [{
+          title: "\u9ED8\u8BA4\u5BBD\u5EA6",
+          value: "auto",
+          description: "\u6062\u590D OpenCode \u539F\u6709\u4FA7\u680F\u5BBD\u5EA6"
+        }, ...[25, 33, 40, 50, 60].map((value) => ({
+          title: `\u5BBD\u5EA6 ${value}%`,
+          value: String(value),
+          description: "\u540C\u65F6\u4FDD\u7559\u4E3B\u4F1A\u8BDD\u7684\u8F93\u5165\u7A7A\u95F4"
+        }))];
+      },
+      current: selected,
+      onSelect: (item) => {
+        closeDialog();
+        const percent = item.value === "auto" ? void 0 : Number(item.value);
+        setWidthPercent(percent);
+        api.kv.set(prefix + "widthPercent", percent ?? null);
+        save();
+      }
+    }));
+  }
+  function size() {
+    dialog(() => _$createComponent(api.ui.DialogSelect, {
+      title: "\u9605\u8BFB\u533A\u57DF\u5927\u5C0F",
+      placeholder: "\u70B9\u51FB\u9009\u62E9\u8981\u8C03\u6574\u7684\u5C3A\u5BF8",
+      get options() {
+        return [...options?.hostMajor === 2 ? [{
+          title: "\u8C03\u6574\u5BBD\u5EA6",
+          value: "width",
+          description: "\u6539\u53D8\u4FA7\u680F\u5BBD\u5EA6\u5E76\u91CD\u65B0\u5206\u9875"
+        }] : [], {
+          title: "\u8C03\u6574\u9AD8\u5EA6",
+          value: "height",
+          description: "\u6539\u53D8\u6B63\u6587\u9AD8\u5EA6\uFF0C\u9875\u7801\u548C\u6309\u94AE\u540C\u6B65\u79FB\u52A8"
+        }];
+      },
+      onSelect: (item) => {
+        closeDialog();
+        item.value === "width" ? widthSize() : heightSize();
+      }
+    }));
+  }
+  const resize = (nextWidth = api.renderer.width, nextHeight = api.renderer.height) => {
+    setHeight(nextHeight);
+    setWidth(nextWidth);
+  };
   let refresh;
   const watcher = watch(booksDir, (_event, filename) => {
     const current = book();
@@ -785,6 +871,8 @@ var tui = async (api, options) => {
     started = true;
     const savedSize = Number(api.kv.get(prefix + "heightPercent", null));
     if (Number.isFinite(savedSize) && savedSize >= 10 && savedSize <= 100) setHeightPercent(savedSize);
+    const savedWidth = Number(api.kv.get(prefix + "widthPercent", null));
+    if (Number.isFinite(savedWidth) && savedWidth >= 20 && savedWidth <= 60) setWidthPercent(savedWidth);
     setVisible(api.kv.get(prefix + "visible", true));
     const initial = typeof options?.file === "string" ? options.file : api.kv.get(prefix + "last", "");
     void open2(initial || resolve3(pluginRoot, "books/\u591C\u73ED\u4FBF\u5229\u5E97.txt"), true);
@@ -880,186 +968,257 @@ var tui = async (api, options) => {
   });
   function Reader() {
     let viewport;
+    const [layout, setLayout] = createSignal();
     const measure = () => {
       if (viewport && !viewport.isDestroyed) setViewportHeight(viewport.height);
     };
+    const applyWidth = () => layout()?.apply(visible() ? widthPercent() : void 0, width());
+    const frameResized = () => queueMicrotask(() => {
+      if (!api.lifecycle.signal.aborted) applyWidth();
+    });
+    createEffect(applyWidth);
     function observe(node) {
       if (options?.hostMajor !== 2) return;
       if (viewport) return;
       for (let parent = node.parent; parent; parent = parent.parent) {
         if (!(parent instanceof ScrollBoxRenderable)) continue;
         viewport = parent.viewport;
+        const sizing = sidebarLayout(parent);
+        setLayout(sizing);
+        sizing?.frame?.on("resized", frameResized);
         viewport.on("resized", measure);
         measure();
         break;
       }
     }
-    onCleanup(() => viewport?.off("resized", measure));
+    onCleanup(() => {
+      viewport?.off("resized", measure);
+      layout()?.frame?.off("resized", frameResized);
+      layout()?.restore();
+    });
     const theme = () => api.theme.current;
     const gap = () => height() < 40 ? 0 : 1;
-    const chromeRows = () => 6 + gap() * 5;
     const percentage = () => page() === pages().length - 1 ? 100 : Math.floor(pages()[page()].start / (book()?.text.length || 1) * 100);
+    function Button(props) {
+      let pressed = false;
+      const click = (event) => {
+        const activate = pressed && event.button === 0 && !event.isDragging;
+        pressed = false;
+        if (!activate) return;
+        event.preventDefault();
+        event.stopPropagation();
+        queueMicrotask(() => {
+          if (!api.lifecycle.signal.aborted) props.action();
+        });
+      };
+      return (() => {
+        var _el$ = _$createElement("text");
+        _$setProp(_el$, "selectable", false);
+        _$setProp(_el$, "wrapMode", "none");
+        _$setProp(_el$, "onMouseDown", (event) => {
+          if (event.button === 0) {
+            pressed = true;
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        });
+        _$setProp(_el$, "onMouseOut", () => {
+          pressed = false;
+        });
+        _$setProp(_el$, "onMouseDrag", () => {
+          pressed = false;
+        });
+        _$setProp(_el$, "onMouseUp", click);
+        _$insert(_el$, () => props.label);
+        _$effect((_$p) => _$setProp(_el$, "fg", props.muted ? theme().textMuted : theme().primary, _$p));
+        return _el$;
+      })();
+    }
     return _$createComponent(Show, {
       get when() {
         return visible();
       },
+      get fallback() {
+        return (() => {
+          var _el$15 = _$createElement("box");
+          _$setProp(_el$15, "height", 1);
+          _$insert(_el$15, _$createComponent(Button, {
+            label: "[\u663E\u793A\u9605\u8BFB]",
+            action: toggle
+          }));
+          return _el$15;
+        })();
+      },
       get children() {
-        var _el$ = _$createElement("box"), _el$2 = _$createElement("box"), _el$3 = _$createElement("text"), _el$4 = _$createElement("b"), _el$6 = _$createElement("box"), _el$7 = _$createElement("text"), _el$8 = _$createElement("text");
-        _$insertNode(_el$, _el$2);
-        _$setProp(_el$, "flexShrink", 0);
-        _$setProp(_el$, "width", "100%");
-        _$setProp(_el$, "onSizeChange", function() {
+        var _el$2 = _$createElement("box"), _el$3 = _$createElement("box"), _el$4 = _$createElement("text"), _el$5 = _$createElement("b"), _el$7 = _$createElement("box"), _el$8 = _$createElement("box");
+        _$insertNode(_el$2, _el$3);
+        _$insertNode(_el$2, _el$8);
+        _$setProp(_el$2, "flexShrink", 0);
+        _$setProp(_el$2, "width", "100%");
+        _$setProp(_el$2, "onSizeChange", function() {
+          setBodyWidth(Math.max(2, Math.floor(this.width)));
           observe(this);
         });
-        _$insertNode(_el$2, _el$3);
-        _$insertNode(_el$2, _el$6);
-        _$setProp(_el$2, "flexShrink", 0);
-        _$setProp(_el$2, "height", 1);
-        _$setProp(_el$2, "flexDirection", "row");
-        _$setProp(_el$2, "justifyContent", "space-between");
         _$insertNode(_el$3, _el$4);
-        _$setProp(_el$3, "onMouseDown", () => void shelf());
-        _$insertNode(_el$4, _$createTextNode(`\u968F\u624B\u8BFB`));
-        _$insertNode(_el$6, _el$7);
-        _$insertNode(_el$6, _el$8);
-        _$setProp(_el$6, "flexDirection", "row");
-        _$setProp(_el$6, "gap", 2);
-        _$setProp(_el$7, "onMouseDown", size);
-        _$insert(_el$7, (() => {
-          var _c$ = _$memo(() => heightPercent() === void 0);
-          return () => _c$() ? "\u5927\u5C0F" : `\u5927\u5C0F ${heightPercent()}%`;
-        })());
-        _$insertNode(_el$8, _$createTextNode(`\u9690\u85CF`));
-        _$setProp(_el$8, "onMouseDown", toggle);
-        _$insert(_el$, _$createComponent(Show, {
+        _$insertNode(_el$3, _el$7);
+        _$setProp(_el$3, "flexShrink", 0);
+        _$setProp(_el$3, "height", 1);
+        _$setProp(_el$3, "flexDirection", "row");
+        _$setProp(_el$3, "justifyContent", "space-between");
+        _$insertNode(_el$4, _el$5);
+        _$insertNode(_el$5, _$createTextNode(`\u968F\u624B\u8BFB`));
+        _$setProp(_el$7, "flexDirection", "row");
+        _$setProp(_el$7, "gap", 1);
+        _$insert(_el$7, _$createComponent(Button, {
+          label: "[\u4E66\u67B6]",
+          action: shelf
+        }), null);
+        _$insert(_el$7, _$createComponent(Button, {
+          label: "[\u76EE\u5F55]",
+          action: chapters
+        }), null);
+        _$insert(_el$7, _$createComponent(Button, {
+          label: "[\u9690\u85CF]",
+          action: toggle,
+          muted: true
+        }), null);
+        _$setProp(_el$8, "flexShrink", 0);
+        _$setProp(_el$8, "flexDirection", "row");
+        _$setProp(_el$8, "gap", 2);
+        _$insert(_el$8, _$createComponent(Show, {
+          get when() {
+            return options?.hostMajor === 2;
+          },
+          get children() {
+            return _$createComponent(Button, {
+              get label() {
+                return `[\u5BBD\u5EA6 ${widthPercent() ?? "\u81EA\u52A8"}${widthPercent() === void 0 ? "" : "%"}]`;
+              },
+              action: widthSize
+            });
+          }
+        }), null);
+        _$insert(_el$8, _$createComponent(Button, {
+          get label() {
+            return `[\u9AD8\u5EA6 ${heightPercent() ?? "\u81EA\u52A8"}${heightPercent() === void 0 ? "" : "%"}]`;
+          },
+          action: heightSize
+        }), null);
+        _$insert(_el$2, _$createComponent(Show, {
           get when() {
             return book();
           },
           get fallback() {
-            return (() => {
-              var _el$28 = _$createElement("text");
-              _$insert(_el$28, () => busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "Alt+O \u6253\u5F00\u672C\u5730\u5C0F\u8BF4");
-              _$effect((_$p) => _$setProp(_el$28, "fg", theme().textMuted, _$p));
-              return _el$28;
-            })();
+            return _$createComponent(Button, {
+              get label() {
+                return busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "[\u70B9\u51FB\u6253\u5F00\u672C\u5730\u5C0F\u8BF4]";
+              },
+              action: shelf
+            });
           },
           get children() {
             return [(() => {
-              var _el$0 = _$createElement("box"), _el$1 = _$createElement("text"), _el$10 = _$createElement("text");
-              _$insertNode(_el$0, _el$1);
-              _$insertNode(_el$0, _el$10);
-              _$setProp(_el$0, "flexShrink", 0);
-              _$setProp(_el$0, "height", 2);
-              _$setProp(_el$1, "wrapMode", "none");
-              _$setProp(_el$1, "onMouseDown", () => void shelf());
-              _$insert(_el$1, () => book()?.title);
-              _$setProp(_el$10, "wrapMode", "none");
-              _$setProp(_el$10, "onMouseDown", chapters);
-              _$insert(_el$10, currentChapter);
-              _$effect((_p$) => {
-                var _v$ = theme().textMuted, _v$2 = theme().primary;
-                _v$ !== _p$.e && (_p$.e = _$setProp(_el$1, "fg", _v$, _p$.e));
-                _v$2 !== _p$.t && (_p$.t = _$setProp(_el$10, "fg", _v$2, _p$.t));
-                return _p$;
-              }, {
-                e: void 0,
-                t: void 0
-              });
-              return _el$0;
+              var _el$9 = _$createElement("box");
+              _$setProp(_el$9, "flexShrink", 0);
+              _$insert(_el$9, _$createComponent(Button, {
+                get label() {
+                  return book()?.title ?? "";
+                },
+                action: shelf,
+                muted: true
+              }), null);
+              _$insert(_el$9, _$createComponent(Button, {
+                get label() {
+                  return currentChapter();
+                },
+                action: chapters
+              }), null);
+              _$effect((_$p) => _$setProp(_el$9, "height", 2 + gap(), _$p));
+              return _el$9;
             })(), (() => {
-              var _el$11 = _$createElement("box"), _el$12 = _$createElement("text");
-              _$insertNode(_el$11, _el$12);
-              _$setProp(_el$11, "flexShrink", 0);
-              _$setProp(_el$12, "width", "100%");
-              _$setProp(_el$12, "height", "100%");
-              _$setProp(_el$12, "wrapMode", "none");
-              _$insert(_el$12, () => pages()[page()].text);
+              var _el$0 = _$createElement("box"), _el$1 = _$createElement("text");
+              _$insertNode(_el$0, _el$1);
+              _$setProp(_el$0, "flexShrink", 0);
+              _$setProp(_el$1, "width", "100%");
+              _$setProp(_el$1, "height", "100%");
+              _$setProp(_el$1, "wrapMode", "none");
+              _$insert(_el$1, () => pages()[page()].text);
               _$effect((_p$) => {
-                var _v$3 = rows(), _v$4 = rows(), _v$5 = theme().text;
-                _v$3 !== _p$.e && (_p$.e = _$setProp(_el$11, "height", _v$3, _p$.e));
-                _v$4 !== _p$.t && (_p$.t = _$setProp(_el$11, "minHeight", _v$4, _p$.t));
-                _v$5 !== _p$.a && (_p$.a = _$setProp(_el$12, "fg", _v$5, _p$.a));
+                var _v$ = rows(), _v$2 = rows(), _v$3 = theme().text;
+                _v$ !== _p$.e && (_p$.e = _$setProp(_el$0, "height", _v$, _p$.e));
+                _v$2 !== _p$.t && (_p$.t = _$setProp(_el$0, "minHeight", _v$2, _p$.t));
+                _v$3 !== _p$.a && (_p$.a = _$setProp(_el$1, "fg", _v$3, _p$.a));
                 return _p$;
               }, {
                 e: void 0,
                 t: void 0,
                 a: void 0
               });
-              return _el$11;
+              return _el$0;
             })(), (() => {
-              var _el$13 = _$createElement("box"), _el$14 = _$createElement("box"), _el$15 = _$createElement("text"), _el$16 = _$createTextNode(` / `), _el$17 = _$createTextNode(` \u9875 \xB7 `), _el$18 = _$createTextNode(`%`), _el$19 = _$createElement("text"), _el$21 = _$createElement("box"), _el$22 = _$createElement("text"), _el$24 = _$createElement("text"), _el$26 = _$createElement("text");
-              _$insertNode(_el$13, _el$14);
-              _$insertNode(_el$13, _el$21);
-              _$insertNode(_el$13, _el$26);
-              _$setProp(_el$13, "flexShrink", 0);
-              _$insertNode(_el$14, _el$15);
-              _$insertNode(_el$14, _el$19);
-              _$setProp(_el$14, "flexShrink", 0);
-              _$setProp(_el$14, "height", 1);
-              _$setProp(_el$14, "flexDirection", "row");
-              _$setProp(_el$14, "justifyContent", "space-between");
-              _$insertNode(_el$15, _el$16);
-              _$insertNode(_el$15, _el$17);
-              _$insertNode(_el$15, _el$18);
-              _$setProp(_el$15, "onMouseDown", jump);
-              _$insert(_el$15, () => page() + 1, _el$16);
-              _$insert(_el$15, () => pages().length, _el$17);
-              _$insert(_el$15, percentage, _el$18);
-              _$insertNode(_el$19, _$createTextNode(`\u5220\u9664`));
-              _$setProp(_el$19, "onMouseDown", removeBook);
-              _$insertNode(_el$21, _el$22);
-              _$insertNode(_el$21, _el$24);
-              _$setProp(_el$21, "flexShrink", 0);
-              _$setProp(_el$21, "height", 1);
-              _$setProp(_el$21, "flexDirection", "row");
-              _$setProp(_el$21, "justifyContent", "space-between");
-              _$insertNode(_el$22, _$createTextNode(`\u2039 \u4E0A\u4E00\u9875`));
-              _$setProp(_el$22, "onMouseDown", () => turn(-1));
-              _$insertNode(_el$24, _$createTextNode(`\u4E0B\u4E00\u9875 \u203A`));
-              _$setProp(_el$24, "onMouseDown", () => turn(1));
-              _$insertNode(_el$26, _$createTextNode(`Ctrl+X J \u5927\u5C0F \xB7 Alt+M \u9690\u85CF`));
-              _$setProp(_el$26, "height", 1);
-              _$setProp(_el$26, "wrapMode", "none");
-              _$setProp(_el$26, "onMouseDown", size);
+              var _el$10 = _$createElement("box"), _el$11 = _$createElement("box"), _el$12 = _$createElement("box"), _el$13 = _$createElement("text");
+              _$insertNode(_el$10, _el$11);
+              _$insertNode(_el$10, _el$12);
+              _$insertNode(_el$10, _el$13);
+              _$setProp(_el$10, "flexShrink", 0);
+              _$setProp(_el$11, "flexShrink", 0);
+              _$setProp(_el$11, "height", 1);
+              _$setProp(_el$11, "flexDirection", "row");
+              _$setProp(_el$11, "justifyContent", "space-between");
+              _$insert(_el$11, _$createComponent(Button, {
+                get label() {
+                  return `${page() + 1} / ${pages().length} \u9875 \xB7 ${percentage()}%`;
+                },
+                action: jump,
+                muted: true
+              }), null);
+              _$insert(_el$11, _$createComponent(Button, {
+                label: "[\u5220\u9664]",
+                action: removeBook,
+                muted: true
+              }), null);
+              _$setProp(_el$12, "flexShrink", 0);
+              _$setProp(_el$12, "height", 1);
+              _$setProp(_el$12, "flexDirection", "row");
+              _$setProp(_el$12, "justifyContent", "space-between");
+              _$insert(_el$12, _$createComponent(Button, {
+                label: "[\u2039 \u4E0A\u4E00\u9875]",
+                action: () => turn(-1)
+              }), null);
+              _$insert(_el$12, _$createComponent(Button, {
+                label: "[\u4E0B\u4E00\u9875 \u203A]",
+                action: () => turn(1)
+              }), null);
+              _$insertNode(_el$13, _$createTextNode(`\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u8C03\u6574\u5BBD\u9AD8`));
+              _$setProp(_el$13, "height", 1);
+              _$setProp(_el$13, "wrapMode", "none");
               _$effect((_p$) => {
-                var _v$6 = 3 + gap() * 2, _v$7 = gap(), _v$8 = theme().textMuted, _v$9 = theme().textMuted, _v$0 = theme().primary, _v$1 = theme().primary, _v$10 = theme().textMuted;
-                _v$6 !== _p$.e && (_p$.e = _$setProp(_el$13, "height", _v$6, _p$.e));
-                _v$7 !== _p$.t && (_p$.t = _$setProp(_el$13, "gap", _v$7, _p$.t));
-                _v$8 !== _p$.a && (_p$.a = _$setProp(_el$15, "fg", _v$8, _p$.a));
-                _v$9 !== _p$.o && (_p$.o = _$setProp(_el$19, "fg", _v$9, _p$.o));
-                _v$0 !== _p$.i && (_p$.i = _$setProp(_el$22, "fg", _v$0, _p$.i));
-                _v$1 !== _p$.n && (_p$.n = _$setProp(_el$24, "fg", _v$1, _p$.n));
-                _v$10 !== _p$.s && (_p$.s = _$setProp(_el$26, "fg", _v$10, _p$.s));
+                var _v$4 = 4 + gap(), _v$5 = gap(), _v$6 = theme().textMuted;
+                _v$4 !== _p$.e && (_p$.e = _$setProp(_el$10, "height", _v$4, _p$.e));
+                _v$5 !== _p$.t && (_p$.t = _$setProp(_el$10, "paddingTop", _v$5, _p$.t));
+                _v$6 !== _p$.a && (_p$.a = _$setProp(_el$13, "fg", _v$6, _p$.a));
                 return _p$;
               }, {
                 e: void 0,
                 t: void 0,
-                a: void 0,
-                o: void 0,
-                i: void 0,
-                n: void 0,
-                s: void 0
+                a: void 0
               });
-              return _el$13;
+              return _el$10;
             })()];
           }
         }), null);
         _$effect((_p$) => {
-          var _v$11 = book() ? rows() + chromeRows() : void 0, _v$12 = gap(), _v$13 = theme().text, _v$14 = theme().textMuted, _v$15 = theme().textMuted;
-          _v$11 !== _p$.e && (_p$.e = _$setProp(_el$, "height", _v$11, _p$.e));
-          _v$12 !== _p$.t && (_p$.t = _$setProp(_el$, "gap", _v$12, _p$.t));
-          _v$13 !== _p$.a && (_p$.a = _$setProp(_el$3, "fg", _v$13, _p$.a));
-          _v$14 !== _p$.o && (_p$.o = _$setProp(_el$7, "fg", _v$14, _p$.o));
-          _v$15 !== _p$.i && (_p$.i = _$setProp(_el$8, "fg", _v$15, _p$.i));
+          var _v$7 = book() ? rows() + chromeRows() : void 0, _v$8 = theme().text, _v$9 = 1 + gap();
+          _v$7 !== _p$.e && (_p$.e = _$setProp(_el$2, "height", _v$7, _p$.e));
+          _v$8 !== _p$.t && (_p$.t = _$setProp(_el$4, "fg", _v$8, _p$.t));
+          _v$9 !== _p$.a && (_p$.a = _$setProp(_el$8, "height", _v$9, _p$.a));
           return _p$;
         }, {
           e: void 0,
           t: void 0,
-          a: void 0,
-          o: void 0,
-          i: void 0
+          a: void 0
         });
-        return _el$;
+        return _el$2;
       }
     });
   }
