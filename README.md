@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.3.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.4.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -54,9 +54,11 @@ OpenCode 2.x 中，在输入框提交：
 
 或输入 `/moyu` 打开书架，选择「让当前模型采集小说…」，填写书名、作者或目录链接。输入命令后若先出现补全结果，按 Enter 补全，再按 Enter 提交。
 
+聊天区只显示一句 `采集小说：你输入的书名或要求`。HTTP 采集方式、工具调用及失败处理规则放在后台模型上下文中，不再作为长段用户消息显示。
+
 插件会把采集任务交给当前选中的模型，在当前会话排队执行；从首页发起会创建会话。模型查找来源、核对目录，再分批存进加密书架，不需要另配 API 密钥。采集进度和错误在 OpenCode 对话中显示；完成后输入 `/moyu` 选择小说阅读。默认先采集 20 章，也可在要求中指定数量。请在可联网并允许工具执行的 agent 中使用；访问授权沿用 OpenCode 的现有设置。
 
-采集任务限定为纯 HTTP/HTTPS：目录和正文由插件直接下载、解析并加密入库。`/moyu` 发给模型的指令明确禁止浏览器、无头浏览器、Playwright、Selenium、CDP、浏览器 MCP，以及依赖浏览器的搜索技能。只有书名时可使用已有的 HTTP 搜索接口；搜索接口不可用时报告缺少目录链接，不安装浏览器或搜索环境。目录为空、需要 JavaScript、登录或验证码时停止该来源，不回退浏览器、不加载整页 HTML 到模型上下文。
+采集任务限定为纯 HTTP/HTTPS：目录和正文由插件直接下载、解析并加密入库。`/moyu` 在后台注入的模型规则明确禁止浏览器、无头浏览器、Playwright、Selenium、CDP、浏览器 MCP，以及依赖浏览器的搜索技能。只有书名时可使用已有的 HTTP 搜索接口；搜索接口不可用时报告缺少目录链接，不安装浏览器或搜索环境。目录为空、需要 JavaScript、登录或验证码时停止该来源，不回退浏览器、不加载整页 HTML 到模型上下文。
 
 1.19.x 仍支持采集工具，在普通对话中向模型提出同样要求即可。
 

@@ -31,7 +31,8 @@ flowchart LR
 | `src/library/vault.mjs` | 随机密钥、随机 nonce、AES-GCM 认证加密 |
 | `src/library/text-reader.mjs` | TXT 解码、中文分页、章节识别、加密书籍读取 |
 | `src/server/index.ts` | 将服务层封装为当前模型可调用的 OpenCode 工具 |
-| `src/server/v2.ts` | 2.x 工具注册、参数 schema、进度与权限 API 适配 |
+| `src/server/v2.ts` | 2.x 工具注册、参数 schema、进度、权限及模型上下文 hook 适配 |
+| `src/server/collection-context.mjs` | 按最新用户消息的 Moyu 元数据注入后台采集规则，不写入聊天历史 |
 | `src/ui/index.tsx` | 原生侧栏、书架、阅读进度、删除确认和快捷键 |
 | `src/ui/collect.mjs` | 解析 /moyu 参数，复用宿主当前模型，将采集任务提交到会话队列 |
 | `src/ui/v2.ts` | 2.x 插槽、存储、键盘、主题和对话框 API 适配 |
@@ -82,4 +83,4 @@ registry.register({
 
 OpenCode 2.x 的 `/moyu` 无参数时打开书架，有参数时通过宿主 `session.switchModel` / `session.prompt` 提交给当前选择的模型；从首页则先创建当前项目的会话。不保存模型凭据，不在 UI 中执行爬虫。书架中的采集表单使用相同接口；1.19.x 通过普通对话调用已注册工具。
 
-`/moyu` 采集提示将传输方式限定为 HTTP/HTTPS，禁止模型调用浏览器、无头浏览器、Playwright / Selenium、CDP、浏览器 MCP 或相关技能；搜索接口不可用或目录为空时停止该来源。此限制通过每次提交的模型任务指令传达，目录与正文工具本身使用 Node HTTP 客户端。
+`/moyu` 采集提示将传输方式限定为 HTTP/HTTPS，禁止模型调用浏览器、无头浏览器、Playwright / Selenium、CDP、浏览器 MCP 或相关技能；搜索接口不可用或目录为空时停止该来源。此限制通过 2.x 的 `session.context` hook 添加到模型 system，目录与正文工具本身使用 Node HTTP 客户端。用户消息仅保留一句采集要求及 `origin: moyu` 元数据；hook 从最新 user 消息的元数据识别任务，普通对话不注入采集规则。

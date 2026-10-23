@@ -19,7 +19,7 @@ function fixture(route = { type: "session", sessionID: "current-session" }) {
   return { host, calls }
 }
 
-test("/moyu 采集请求复用当前模型，在当前会话排队并要求实际调用入库工具", async () => {
+test("/moyu 采集请求复用当前模型，在当前会话排队且只显示一句采集要求", async () => {
   const { host, calls } = fixture()
   assert.equal(await requestCollection(host, "/moyu 忘语的凡人修仙传，先采集20章"), "current-session")
   assert.equal(calls[0][0], "model")
@@ -27,9 +27,9 @@ test("/moyu 采集请求复用当前模型，在当前会话排队并要求实�
   const request = calls[1][1]
   assert.equal(request.sessionID, "current-session")
   assert.equal(request.delivery, "queue")
-  assert.match(request.text, /moyu_catalog/)
-  assert.match(request.text, /moyu_import/)
-  assert.match(request.text, /实际结果/)
+  assert.equal(request.text, "采集小说：忘语的凡人修仙传，先采集20章")
+  assert.equal(request.text.split("\n").length, 1)
+  assert.doesNotMatch(request.text, /moyu_catalog|moyu_import|采集方式限定/)
   assert.equal(request.metadata.query, "忘语的凡人修仙传，先采集20章")
 })
 
@@ -40,20 +40,6 @@ test("从首页采集时在当前项目创建会话，发送失败不会报告�
   assert.equal(calls[0][1].location.directory, "/project")
   host.client.session.prompt = async () => { throw new Error("server-offline") }
   await assert.rejects(requestCollection(host, "凡人修仙传"), /server-offline/)
-})
-
-test("发送给模型的采集任务只允许 HTTP，不回退浏览器或导入空目录", async () => {
-  const { host, calls } = fixture()
-  await requestCollection(host, "/moyu 忘语的凡人修仙传，先采集20章")
-  const { text } = calls.find(([name]) => name === "prompt")[1]
-  assert.match(text, /采集方式限定为纯 HTTP\/HTTPS 请求/)
-  assert.match(text, /禁止打开或操控浏览器/)
-  for (const name of ["Playwright", "Selenium", "Chromium", "CDP", "浏览器 MCP"]) assert.ok(text.includes(name))
-  assert.match(text, /不得通过 shell、子任务或其他工具绕过/)
-  assert.match(text, /搜索接口不可用时报告缺少目录链接/)
-  assert.match(text, /total=0 或 items=\[\] 时停止该来源/)
-  assert.match(text, /不得把空目录当整本小说入库/)
-  assert.match(text, /不要用网页工具把整页 HTML、全文或脚本灌进模型上下文/)
 })
 
 test("空命令只用于书架入口，不创建模型请求；缺少选中模型时报错", async () => {

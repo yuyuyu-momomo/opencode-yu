@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import { tool } from "@opencode-ai/plugin"
 import legacy from "./index"
+import { injectCollectionInstructions } from "./collection-context.mjs"
 
 export default Plugin.define({
   id: "opencode-moyu-server",
@@ -35,6 +36,15 @@ export default Plugin.define({
         })
       }
     })
-    return () => registration.dispose()
+    try {
+      const context = await host.session.hook("context", injectCollectionInstructions)
+      return async () => {
+        await context.dispose()
+        await registration.dispose()
+      }
+    } catch (error) {
+      await registration.dispose()
+      throw error
+    }
   },
 })

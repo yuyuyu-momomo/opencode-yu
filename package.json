@@ -1,6 +1,6 @@
 {
   "name": "opencode-moyu",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "OpenCode 原生右侧栏小说阅读器",
   "type": "module",
   "license": "MIT",

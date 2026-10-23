@@ -9,11 +9,16 @@ test("2.x 模型工具保留参数校验、服务执行及权限拒绝", async (
   const directory = await mkdtemp(join(tmpdir(), "moyu-tools-v2-"))
   const tools = new Map()
   let disposed = false
+  const hooks = new Map()
   const requests = []
   const context = { sessionID: "test-session", messageID: "test-message", agent: "build", id: "test-call", signal: new AbortController().signal, progress: async () => {} }
   const cleanup = await plugin.setup({
     options: { booksDir: join(directory, "books"), keyFile: join(directory, "keys/library.key") },
     location: { directory },
+    session: { async hook(name, callback) {
+      hooks.set(name, callback)
+      return { async dispose() { hooks.delete(name) } }
+    } },
     permission: { async assert(request) { requests.push(request); throw new Error("test-permission-denied") } },
     tool: { async transform(callback) {
       callback({ add(value) { tools.set(value.name, value) } })
@@ -21,6 +26,7 @@ test("2.x 模型工具保留参数校验、服务执行及权限拒绝", async (
     } },
   })
   try {
+    assert.ok(hooks.has("context"))
     assert.deepEqual([...tools.keys()].sort(), ["moyu_catalog", "moyu_delete", "moyu_import", "moyu_library", "moyu_sources"])
     const sources = JSON.parse((await tools.get("moyu_sources").execute({}, context)).content)
     assert.equal(sources[0].id, "html-novel")
@@ -39,6 +45,7 @@ test("2.x 模型工具保留参数校验、服务执行及权限拒绝", async (
   } finally {
     await cleanup()
     assert.equal(disposed, true)
+    assert.equal(hooks.size, 0)
     await rm(directory, { recursive: true, force: true })
   }
 })
