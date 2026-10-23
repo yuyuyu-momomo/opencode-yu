@@ -46,7 +46,7 @@ const plugin: PluginModule = {
           },
         }),
         moyu_video_import: tool({
-          description: "下载用户指定的一个 B 站 / YouTube 公开视频并加密放入视频库，用 /video 在侧栏像素播放。使用 HTTP 下载器 yt-dlp，不用浏览器或用户登录。最高 480p，单视频最多 256 MiB / 60 分钟，遇到访问拒绝停止。API Key 不能代替视频访问权限。相同 URL 已有缓存时直接复用，不返回原始媒体或临时流链接。",
+          description: "下载用户指定的一个 B 站 / YouTube 公开视频并加密放入视频库，用 /video 在侧栏像素播放。使用 HTTP 下载器 yt-dlp，不用浏览器或用户登录。按短边优先 480p（兼容竖屏），无低清时选最小可用清晰度；单视频最多 256 MiB / 60 分钟，遇到访问拒绝停止。API Key 不能代替视频访问权限。相同 URL 已有缓存时直接复用，不返回原始媒体或临时流链接。",
           args: { url: tool.schema.string().min(1).max(500) },
           async execute(args, context) {
             const target = videoUrl(args.url)

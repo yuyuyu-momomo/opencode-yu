@@ -13849,7 +13849,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.3 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
+          headers: { "User-Agent": "OpenCode-Moyu/0.3.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -20822,6 +20822,7 @@ function createVideoPlatforms({ settings, read = createHttpClient({ maxBytes: 10
 
 // src/services/video-ingestion.mjs
 var execute2 = promisify2(execFile2);
+var VIDEO_FORMAT_ARGS = Object.freeze(["--format", "bv*+ba/bv*", "--format-sort", "res:480,vcodec:h264,acodec:m4a"]);
 async function downloaderBinary() {
   const paths = process.env.MOYU_YTDLP ? [process.env.MOYU_YTDLP] : [
     join5(homedir3(), ".local/share/opencode-moyu/media/bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
@@ -20844,6 +20845,7 @@ function downloadFailure(message, platform) {
   if (/sign in to confirm|not a bot|captcha|human.verification|verify.you.are.human/i.test(message)) return `${platform === "youtube" ? "YouTube" : "\u89C6\u9891\u6765\u6E90"} \u8981\u6C42\u767B\u5F55\u6216\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D\u3002API Key \u4EC5\u7528\u4E8E\u6570\u636E\u67E5\u8BE2\uFF0C\u4E0D\u80FD\u89E3\u9664\u89C6\u9891\u8BBF\u95EE\u9650\u5236\u3002`;
   if (/private video|members.only|premium|age.restricted|login required|sign in/i.test(message)) return "\u89C6\u9891\u9700\u8981\u8D26\u6237\u6216\u989D\u5916\u8BBF\u95EE\u6743\u9650\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D";
   if (/video is unavailable|video unavailable|removed|does not exist/i.test(message)) return "\u89C6\u9891\u4E0D\u53EF\u7528\u3001\u5DF2\u5220\u9664\u6216\u5F53\u524D\u7F51\u7EDC\u65E0\u6CD5\u8BBF\u95EE\uFF0C\u672A\u5165\u5E93";
+  if (/requested format is not available/i.test(message)) return "\u6765\u6E90\u672A\u63D0\u4F9B\u5F53\u524D\u53EF\u4E0B\u8F7D\u7684\u89C6\u9891\u683C\u5F0F\uFF0C\u672A\u5165\u5E93";
   return "\u89C6\u9891\u6765\u6E90\u83B7\u53D6\u5931\u8D25\uFF1A" + safeError(message);
 }
 async function downloadVideo(url2, directory, { signal, onProgress = (_value) => {
@@ -20852,7 +20854,7 @@ async function downloadVideo(url2, directory, { signal, onProgress = (_value) =>
   signal?.throwIfAborted();
   const executable = await binary(), ffmpeg = await mediaBinary("ffmpeg");
   signal?.throwIfAborted();
-  const args = ["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--playlist-items", "1", "--no-remote-components", "--js-runtimes", "node", "--socket-timeout", "15", "--retries", "0", "--extractor-retries", "0", "--fragment-retries", "0", "--abort-on-unavailable-fragments", "--concurrent-fragments", "1", "--match-filters", "!is_live & duration <= 3600", "--max-filesize", String(MAX_VIDEO_BYTES), "--format", "bv*[height<=480]+ba/b[height<=480]", "--merge-output-format", "mp4/mkv", "--ffmpeg-location", dirname2(ffmpeg), "--no-mtime", "--newline", "--progress", "--progress-template", "download:MOYU_PROGRESS:%(progress._percent_str)s", "--print", "before_dl:MOYU_META:%(title)j", "--no-simulate", "--paths", directory, "--output", "video.%(ext)s", "--", target.url];
+  const args = ["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--playlist-items", "1", "--no-remote-components", "--js-runtimes", "node", "--socket-timeout", "15", "--retries", "0", "--extractor-retries", "0", "--fragment-retries", "0", "--abort-on-unavailable-fragments", "--concurrent-fragments", "1", "--match-filters", "!is_live & duration <= 3600", "--max-filesize", String(MAX_VIDEO_BYTES), ...VIDEO_FORMAT_ARGS, "--merge-output-format", "mp4/mkv", "--ffmpeg-location", dirname2(ffmpeg), "--no-mtime", "--newline", "--progress", "--progress-template", "download:MOYU_PROGRESS:%(progress._percent_str)s", "--print", "before_dl:MOYU_META:%(title)j", "--no-simulate", "--paths", directory, "--output", "video.%(ext)s", "--", target.url];
   return new Promise((resolve4, reject) => {
     const child = launch(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
     let stderr = "", partial2 = "", title = "", failure, finished = false;
@@ -21044,7 +21046,7 @@ var plugin = {
           }
         }),
         moyu_video_import: tool({
-          description: "\u4E0B\u8F7D\u7528\u6237\u6307\u5B9A\u7684\u4E00\u4E2A B \u7AD9 / YouTube \u516C\u5F00\u89C6\u9891\u5E76\u52A0\u5BC6\u653E\u5165\u89C6\u9891\u5E93\uFF0C\u7528 /video \u5728\u4FA7\u680F\u50CF\u7D20\u64AD\u653E\u3002\u4F7F\u7528 HTTP \u4E0B\u8F7D\u5668 yt-dlp\uFF0C\u4E0D\u7528\u6D4F\u89C8\u5668\u6216\u7528\u6237\u767B\u5F55\u3002\u6700\u9AD8 480p\uFF0C\u5355\u89C6\u9891\u6700\u591A 256 MiB / 60 \u5206\u949F\uFF0C\u9047\u5230\u8BBF\u95EE\u62D2\u7EDD\u505C\u6B62\u3002API Key \u4E0D\u80FD\u4EE3\u66FF\u89C6\u9891\u8BBF\u95EE\u6743\u9650\u3002\u76F8\u540C URL \u5DF2\u6709\u7F13\u5B58\u65F6\u76F4\u63A5\u590D\u7528\uFF0C\u4E0D\u8FD4\u56DE\u539F\u59CB\u5A92\u4F53\u6216\u4E34\u65F6\u6D41\u94FE\u63A5\u3002",
+          description: "\u4E0B\u8F7D\u7528\u6237\u6307\u5B9A\u7684\u4E00\u4E2A B \u7AD9 / YouTube \u516C\u5F00\u89C6\u9891\u5E76\u52A0\u5BC6\u653E\u5165\u89C6\u9891\u5E93\uFF0C\u7528 /video \u5728\u4FA7\u680F\u50CF\u7D20\u64AD\u653E\u3002\u4F7F\u7528 HTTP \u4E0B\u8F7D\u5668 yt-dlp\uFF0C\u4E0D\u7528\u6D4F\u89C8\u5668\u6216\u7528\u6237\u767B\u5F55\u3002\u6309\u77ED\u8FB9\u4F18\u5148 480p\uFF08\u517C\u5BB9\u7AD6\u5C4F\uFF09\uFF0C\u65E0\u4F4E\u6E05\u65F6\u9009\u6700\u5C0F\u53EF\u7528\u6E05\u6670\u5EA6\uFF1B\u5355\u89C6\u9891\u6700\u591A 256 MiB / 60 \u5206\u949F\uFF0C\u9047\u5230\u8BBF\u95EE\u62D2\u7EDD\u505C\u6B62\u3002API Key \u4E0D\u80FD\u4EE3\u66FF\u89C6\u9891\u8BBF\u95EE\u6743\u9650\u3002\u76F8\u540C URL \u5DF2\u6709\u7F13\u5B58\u65F6\u76F4\u63A5\u590D\u7528\uFF0C\u4E0D\u8FD4\u56DE\u539F\u59CB\u5A92\u4F53\u6216\u4E34\u65F6\u6D41\u94FE\u63A5\u3002",
           args: { url: tool.schema.string().min(1).max(500) },
           async execute(args, context) {
             const target = videoUrl(args.url);

@@ -124,7 +124,7 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
     finally { if (downloadAbort === abort) { downloadAbort = undefined; setDownloadProgress("") } }
   }
   function promptUrl() {
-    settings.dialog(() => <api.ui.DialogPrompt title="导入 B 站 / YouTube 视频" placeholder="完整视频链接或 BV 号，最高 480p / 256 MiB / 60 分钟" onCancel={settings.close}
+    settings.dialog(() => <api.ui.DialogPrompt title="导入 B 站 / YouTube 视频" placeholder="完整视频链接或 BV 号，优先 480p / 256 MiB / 60 分钟" onCancel={settings.close}
       onConfirm={(url) => { settings.close(); void download(url) }} />)
   }
   function searchPlatform() {

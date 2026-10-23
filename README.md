@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.3.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.3.1.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -53,7 +53,7 @@ bash install.sh
 
 ## B 站 / YouTube 来源
 
-在「视频库」选择「B 站 / YouTube 视频链接」，粘贴完整视频链接或 BV 号；也可选「搜索在线视频」，选择平台、输入关键词，再点击结果下载。单次下载一个视频，最高 480p、最长 60 分钟、成品不超过 256 MiB；下载行可点击取消。相同规范化 URL 已入库时复用缓存。
+在「视频库」选择「B 站 / YouTube 视频链接」，粘贴完整视频链接或 BV 号；也可选「搜索在线视频」，选择平台、输入关键词，再点击结果下载。单次下载一个视频，优先选择短边不超过 480 的最佳清晰度，兼容竖屏；若没有低清格式则选最小可用清晰度。同等清晰度优先 H.264，兼容无音轨视频。最长 60 分钟、成品不超过 256 MiB；下载行可点击取消。相同规范化 URL 已入库时复用缓存。
 
 B 站公开搜索及视频信息无需 API Key，接口有访问限制时显示实际错误。YouTube 搜索和视频信息使用 [YouTube Data API v3](https://developers.google.com/youtube/v3/docs/search/list)，填写方式：
 

@@ -8,7 +8,7 @@ import { execFile, spawn } from "node:child_process"
 import { LibraryStore } from "../src/library/store.mjs"
 import { MediaSettings } from "../src/media/settings.mjs"
 import { createVideoPlatforms, videoUrl } from "../src/sources/video-platforms.mjs"
-import { createVideoIngestion, downloadVideo, downloadFailure } from "../src/services/video-ingestion.mjs"
+import { createVideoIngestion, downloadVideo, downloadFailure, downloaderBinary, VIDEO_FORMAT_ARGS } from "../src/services/video-ingestion.mjs"
 import { mediaBinary } from "../src/media/runtime.mjs"
 
 test("视频链接规范化并拒绝伪装域名、凭据、任意网站和合集", () => {
@@ -24,6 +24,7 @@ test("访问验证失败保留实际原因，不把下载器的浏览器 Cookie 
   assert.ok(!error.includes('cookies') && !error.includes('secret'))
   assert.match(downloadFailure('This video is unavailable','youtube'),/未入库/)
   assert.match(downloadFailure('SSL certificate verification failed','youtube'),/SSL certificate/)
+  assert.match(downloadFailure('Requested format is not available. Use --list-formats','bilibili'),/未提供当前可下载的视频格式/)
 })
 
 test("YouTube 密钥仅写加密设置，状态和资料库不暴露密钥，支持替换和移除", async () => {
@@ -68,6 +69,31 @@ test("B 站结果去除 HTML 与控制字符，接口拒绝不会伪装为成功
   assert.equal(items[0].title,'标题')
   const rejected = createVideoPlatforms({settings:{key:async()=>''},read:async()=>({text:JSON.stringify({code:-412})})})
   await assert.rejects(rejected.search({platform:'bilibili',query:'demo'}), /-412/)
+})
+
+let downloader
+try { downloader = await downloaderBinary() } catch {}
+test("实际 yt-dlp 离线选格式：横竖屏按短边、无低清回退、未知尺寸和无声视频", {skip:!downloader}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'moyu-format-selection-'))
+  const audio = {format_id:'audio', url:'https://media.invalid/audio.m4a',ext:'m4a',vcodec:'none',acodec:'mp4a.40.2',abr:128}
+  const video = (id, width, height, extra={}) => ({format_id:id,url:'https://media.invalid/'+id+'.mp4',ext:'mp4',vcodec:'avc1.640033',acodec:'none',width,height,fps:30,...extra})
+  const portrait = [video('v360',360,640),video('v480',480,852),video('av1',480,852,{vcodec:'av01.0.08M.08'}),video('v720',720,1280),audio]
+  const fixtures = [
+    ['portrait', portrait, 'v480+audio'],
+    ['landscape', [video('v360',640,360),video('v480',852,480),video('v720',1280,720),audio], 'v480+audio'],
+    ['only-hd', [video('v720',720,1280),video('v1080',1080,1920),audio], 'v720+audio'],
+    ['unknown-size', [video('unknown',undefined,undefined),audio], 'unknown+audio'],
+    ['silent', [video('silent',480,852)], 'silent'],
+    ['combined', [video('combined',480,852,{acodec:'mp4a.40.2'})], 'combined'],
+  ]
+  for (const [name, formats, expected] of fixtures) {
+    const path = join(root,name+'.json')
+    await writeFile(path,JSON.stringify({id:name,title:name,extractor:'test',webpage_url:'https://media.invalid/'+name,formats}))
+    const args = ['--ignore-config','--no-plugin-dirs','--no-cache-dir','--simulate','--no-check-formats','--load-info-json',path,'--print','%(format_id)s']
+    const {stdout} = await promisify(execFile)(downloader,[...args,...VIDEO_FORMAT_ARGS],{timeout:15000,maxBuffer:32768})
+    assert.equal(stdout.trim(),expected,name)
+    if (name==='portrait') await assert.rejects(promisify(execFile)(downloader,[...args,'--format','bv*[height<=480]+ba/b[height<=480]'],{timeout:15000,maxBuffer:32768}),/Requested format is not available/)
+  }
 })
 
 let ffmpeg
