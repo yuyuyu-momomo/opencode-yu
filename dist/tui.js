@@ -4,7 +4,13 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+}) : x)(function(x) {
+  if (typeof require !== "undefined") return require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
+var __commonJS = (cb, mod) => function __require2() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 var __copyProps = (to, from, except, desc) => {
@@ -33,6 +39,1126 @@ var require_emoji_regex = __commonJS({
   }
 });
 
+// node_modules/ms/index.js
+var require_ms = __commonJS({
+  "node_modules/ms/index.js"(exports, module) {
+    var s = 1e3;
+    var m = s * 60;
+    var h = m * 60;
+    var d = h * 24;
+    var w = d * 7;
+    var y = d * 365.25;
+    module.exports = function(val, options) {
+      options = options || {};
+      var type = typeof val;
+      if (type === "string" && val.length > 0) {
+        return parse(val);
+      } else if (type === "number" && isFinite(val)) {
+        return options.long ? fmtLong(val) : fmtShort(val);
+      }
+      throw new Error(
+        "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
+      );
+    };
+    function parse(str) {
+      str = String(str);
+      if (str.length > 100) {
+        return;
+      }
+      var match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(
+        str
+      );
+      if (!match) {
+        return;
+      }
+      var n = parseFloat(match[1]);
+      var type = (match[2] || "ms").toLowerCase();
+      switch (type) {
+        case "years":
+        case "year":
+        case "yrs":
+        case "yr":
+        case "y":
+          return n * y;
+        case "weeks":
+        case "week":
+        case "w":
+          return n * w;
+        case "days":
+        case "day":
+        case "d":
+          return n * d;
+        case "hours":
+        case "hour":
+        case "hrs":
+        case "hr":
+        case "h":
+          return n * h;
+        case "minutes":
+        case "minute":
+        case "mins":
+        case "min":
+        case "m":
+          return n * m;
+        case "seconds":
+        case "second":
+        case "secs":
+        case "sec":
+        case "s":
+          return n * s;
+        case "milliseconds":
+        case "millisecond":
+        case "msecs":
+        case "msec":
+        case "ms":
+          return n;
+        default:
+          return void 0;
+      }
+    }
+    function fmtShort(ms) {
+      var msAbs = Math.abs(ms);
+      if (msAbs >= d) {
+        return Math.round(ms / d) + "d";
+      }
+      if (msAbs >= h) {
+        return Math.round(ms / h) + "h";
+      }
+      if (msAbs >= m) {
+        return Math.round(ms / m) + "m";
+      }
+      if (msAbs >= s) {
+        return Math.round(ms / s) + "s";
+      }
+      return ms + "ms";
+    }
+    function fmtLong(ms) {
+      var msAbs = Math.abs(ms);
+      if (msAbs >= d) {
+        return plural(ms, msAbs, d, "day");
+      }
+      if (msAbs >= h) {
+        return plural(ms, msAbs, h, "hour");
+      }
+      if (msAbs >= m) {
+        return plural(ms, msAbs, m, "minute");
+      }
+      if (msAbs >= s) {
+        return plural(ms, msAbs, s, "second");
+      }
+      return ms + " ms";
+    }
+    function plural(ms, msAbs, n, name) {
+      var isPlural = msAbs >= n * 1.5;
+      return Math.round(ms / n) + " " + name + (isPlural ? "s" : "");
+    }
+  }
+});
+
+// node_modules/debug/src/common.js
+var require_common = __commonJS({
+  "node_modules/debug/src/common.js"(exports, module) {
+    function setup(env) {
+      createDebug.debug = createDebug;
+      createDebug.default = createDebug;
+      createDebug.coerce = coerce;
+      createDebug.disable = disable;
+      createDebug.enable = enable;
+      createDebug.enabled = enabled;
+      createDebug.humanize = require_ms();
+      createDebug.destroy = destroy;
+      Object.keys(env).forEach((key) => {
+        createDebug[key] = env[key];
+      });
+      createDebug.names = [];
+      createDebug.skips = [];
+      createDebug.formatters = {};
+      function selectColor(namespace) {
+        let hash = 0;
+        for (let i = 0; i < namespace.length; i++) {
+          hash = (hash << 5) - hash + namespace.charCodeAt(i);
+          hash |= 0;
+        }
+        return createDebug.colors[Math.abs(hash) % createDebug.colors.length];
+      }
+      createDebug.selectColor = selectColor;
+      function createDebug(namespace) {
+        let prevTime;
+        let enableOverride = null;
+        let namespacesCache;
+        let enabledCache;
+        function debug(...args) {
+          if (!debug.enabled) {
+            return;
+          }
+          const self = debug;
+          const curr = Number(/* @__PURE__ */ new Date());
+          const ms = curr - (prevTime || curr);
+          self.diff = ms;
+          self.prev = prevTime;
+          self.curr = curr;
+          prevTime = curr;
+          args[0] = createDebug.coerce(args[0]);
+          if (typeof args[0] !== "string") {
+            args.unshift("%O");
+          }
+          let index = 0;
+          args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
+            if (match === "%%") {
+              return "%";
+            }
+            index++;
+            const formatter = createDebug.formatters[format];
+            if (typeof formatter === "function") {
+              const val = args[index];
+              match = formatter.call(self, val);
+              args.splice(index, 1);
+              index--;
+            }
+            return match;
+          });
+          createDebug.formatArgs.call(self, args);
+          const logFn = self.log || createDebug.log;
+          logFn.apply(self, args);
+        }
+        debug.namespace = namespace;
+        debug.useColors = createDebug.useColors();
+        debug.color = createDebug.selectColor(namespace);
+        debug.extend = extend;
+        debug.destroy = createDebug.destroy;
+        Object.defineProperty(debug, "enabled", {
+          enumerable: true,
+          configurable: false,
+          get: () => {
+            if (enableOverride !== null) {
+              return enableOverride;
+            }
+            if (namespacesCache !== createDebug.namespaces) {
+              namespacesCache = createDebug.namespaces;
+              enabledCache = createDebug.enabled(namespace);
+            }
+            return enabledCache;
+          },
+          set: (v) => {
+            enableOverride = v;
+          }
+        });
+        if (typeof createDebug.init === "function") {
+          createDebug.init(debug);
+        }
+        return debug;
+      }
+      function extend(namespace, delimiter3) {
+        const newDebug = createDebug(this.namespace + (typeof delimiter3 === "undefined" ? ":" : delimiter3) + namespace);
+        newDebug.log = this.log;
+        return newDebug;
+      }
+      function enable(namespaces) {
+        createDebug.save(namespaces);
+        createDebug.namespaces = namespaces;
+        createDebug.names = [];
+        createDebug.skips = [];
+        const split = (typeof namespaces === "string" ? namespaces : "").trim().replace(/\s+/g, ",").split(",").filter(Boolean);
+        for (const ns of split) {
+          if (ns[0] === "-") {
+            createDebug.skips.push(ns.slice(1));
+          } else {
+            createDebug.names.push(ns);
+          }
+        }
+      }
+      function matchesTemplate(search, template) {
+        let searchIndex = 0;
+        let templateIndex = 0;
+        let starIndex = -1;
+        let matchIndex = 0;
+        while (searchIndex < search.length) {
+          if (templateIndex < template.length && (template[templateIndex] === search[searchIndex] || template[templateIndex] === "*")) {
+            if (template[templateIndex] === "*") {
+              starIndex = templateIndex;
+              matchIndex = searchIndex;
+              templateIndex++;
+            } else {
+              searchIndex++;
+              templateIndex++;
+            }
+          } else if (starIndex !== -1) {
+            templateIndex = starIndex + 1;
+            matchIndex++;
+            searchIndex = matchIndex;
+          } else {
+            return false;
+          }
+        }
+        while (templateIndex < template.length && template[templateIndex] === "*") {
+          templateIndex++;
+        }
+        return templateIndex === template.length;
+      }
+      function disable() {
+        const namespaces = [
+          ...createDebug.names,
+          ...createDebug.skips.map((namespace) => "-" + namespace)
+        ].join(",");
+        createDebug.enable("");
+        return namespaces;
+      }
+      function enabled(name) {
+        for (const skip of createDebug.skips) {
+          if (matchesTemplate(name, skip)) {
+            return false;
+          }
+        }
+        for (const ns of createDebug.names) {
+          if (matchesTemplate(name, ns)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      function coerce(val) {
+        if (val instanceof Error) {
+          return val.stack || val.message;
+        }
+        return val;
+      }
+      function destroy() {
+        console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
+      }
+      createDebug.enable(createDebug.load());
+      return createDebug;
+    }
+    module.exports = setup;
+  }
+});
+
+// node_modules/debug/src/browser.js
+var require_browser = __commonJS({
+  "node_modules/debug/src/browser.js"(exports, module) {
+    exports.formatArgs = formatArgs;
+    exports.save = save;
+    exports.load = load;
+    exports.useColors = useColors;
+    exports.storage = localstorage();
+    exports.destroy = /* @__PURE__ */ (() => {
+      let warned = false;
+      return () => {
+        if (!warned) {
+          warned = true;
+          console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
+        }
+      };
+    })();
+    exports.colors = [
+      "#0000CC",
+      "#0000FF",
+      "#0033CC",
+      "#0033FF",
+      "#0066CC",
+      "#0066FF",
+      "#0099CC",
+      "#0099FF",
+      "#00CC00",
+      "#00CC33",
+      "#00CC66",
+      "#00CC99",
+      "#00CCCC",
+      "#00CCFF",
+      "#3300CC",
+      "#3300FF",
+      "#3333CC",
+      "#3333FF",
+      "#3366CC",
+      "#3366FF",
+      "#3399CC",
+      "#3399FF",
+      "#33CC00",
+      "#33CC33",
+      "#33CC66",
+      "#33CC99",
+      "#33CCCC",
+      "#33CCFF",
+      "#6600CC",
+      "#6600FF",
+      "#6633CC",
+      "#6633FF",
+      "#66CC00",
+      "#66CC33",
+      "#9900CC",
+      "#9900FF",
+      "#9933CC",
+      "#9933FF",
+      "#99CC00",
+      "#99CC33",
+      "#CC0000",
+      "#CC0033",
+      "#CC0066",
+      "#CC0099",
+      "#CC00CC",
+      "#CC00FF",
+      "#CC3300",
+      "#CC3333",
+      "#CC3366",
+      "#CC3399",
+      "#CC33CC",
+      "#CC33FF",
+      "#CC6600",
+      "#CC6633",
+      "#CC9900",
+      "#CC9933",
+      "#CCCC00",
+      "#CCCC33",
+      "#FF0000",
+      "#FF0033",
+      "#FF0066",
+      "#FF0099",
+      "#FF00CC",
+      "#FF00FF",
+      "#FF3300",
+      "#FF3333",
+      "#FF3366",
+      "#FF3399",
+      "#FF33CC",
+      "#FF33FF",
+      "#FF6600",
+      "#FF6633",
+      "#FF9900",
+      "#FF9933",
+      "#FFCC00",
+      "#FFCC33"
+    ];
+    function useColors() {
+      if (typeof window !== "undefined" && window.process && (window.process.type === "renderer" || window.process.__nwjs)) {
+        return true;
+      }
+      if (typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/)) {
+        return false;
+      }
+      let m;
+      return typeof document !== "undefined" && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance || // Is firebug? http://stackoverflow.com/a/398120/376773
+      typeof window !== "undefined" && window.console && (window.console.firebug || window.console.exception && window.console.table) || // Is firefox >= v31?
+      // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+      typeof navigator !== "undefined" && navigator.userAgent && (m = navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/)) && parseInt(m[1], 10) >= 31 || // Double check webkit in userAgent just in case we are in a worker
+      typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/);
+    }
+    function formatArgs(args) {
+      args[0] = (this.useColors ? "%c" : "") + this.namespace + (this.useColors ? " %c" : " ") + args[0] + (this.useColors ? "%c " : " ") + "+" + module.exports.humanize(this.diff);
+      if (!this.useColors) {
+        return;
+      }
+      const c = "color: " + this.color;
+      args.splice(1, 0, c, "color: inherit");
+      let index = 0;
+      let lastC = 0;
+      args[0].replace(/%[a-zA-Z%]/g, (match) => {
+        if (match === "%%") {
+          return;
+        }
+        index++;
+        if (match === "%c") {
+          lastC = index;
+        }
+      });
+      args.splice(lastC, 0, c);
+    }
+    exports.log = console.debug || console.log || (() => {
+    });
+    function save(namespaces) {
+      try {
+        if (namespaces) {
+          exports.storage.setItem("debug", namespaces);
+        } else {
+          exports.storage.removeItem("debug");
+        }
+      } catch (error) {
+      }
+    }
+    function load() {
+      let r;
+      try {
+        r = exports.storage.getItem("debug") || exports.storage.getItem("DEBUG");
+      } catch (error) {
+      }
+      if (!r && typeof process !== "undefined" && "env" in process) {
+        r = process.env.DEBUG;
+      }
+      return r;
+    }
+    function localstorage() {
+      try {
+        return localStorage;
+      } catch (error) {
+      }
+    }
+    module.exports = require_common()(exports);
+    var { formatters } = module.exports;
+    formatters.j = function(v) {
+      try {
+        return JSON.stringify(v);
+      } catch (error) {
+        return "[UnexpectedJSONParseError]: " + error.message;
+      }
+    };
+  }
+});
+
+// node_modules/debug/src/node.js
+var require_node = __commonJS({
+  "node_modules/debug/src/node.js"(exports, module) {
+    var tty = __require("tty");
+    var util = __require("util");
+    exports.init = init;
+    exports.log = log;
+    exports.formatArgs = formatArgs;
+    exports.save = save;
+    exports.load = load;
+    exports.useColors = useColors;
+    exports.destroy = util.deprecate(
+      () => {
+      },
+      "Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`."
+    );
+    exports.colors = [6, 2, 3, 4, 5, 1];
+    try {
+      const supportsColor = __require("supports-color");
+      if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
+        exports.colors = [
+          20,
+          21,
+          26,
+          27,
+          32,
+          33,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          56,
+          57,
+          62,
+          63,
+          68,
+          69,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          92,
+          93,
+          98,
+          99,
+          112,
+          113,
+          128,
+          129,
+          134,
+          135,
+          148,
+          149,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          178,
+          179,
+          184,
+          185,
+          196,
+          197,
+          198,
+          199,
+          200,
+          201,
+          202,
+          203,
+          204,
+          205,
+          206,
+          207,
+          208,
+          209,
+          214,
+          215,
+          220,
+          221
+        ];
+      }
+    } catch (error) {
+    }
+    exports.inspectOpts = Object.keys(process.env).filter((key) => {
+      return /^debug_/i.test(key);
+    }).reduce((obj, key) => {
+      const prop = key.substring(6).toLowerCase().replace(/_([a-z])/g, (_, k) => {
+        return k.toUpperCase();
+      });
+      let val = process.env[key];
+      if (/^(yes|on|true|enabled)$/i.test(val)) {
+        val = true;
+      } else if (/^(no|off|false|disabled)$/i.test(val)) {
+        val = false;
+      } else if (val === "null") {
+        val = null;
+      } else {
+        val = Number(val);
+      }
+      obj[prop] = val;
+      return obj;
+    }, {});
+    function useColors() {
+      return "colors" in exports.inspectOpts ? Boolean(exports.inspectOpts.colors) : tty.isatty(process.stderr.fd);
+    }
+    function formatArgs(args) {
+      const { namespace: name, useColors: useColors2 } = this;
+      if (useColors2) {
+        const c = this.color;
+        const colorCode = "\x1B[3" + (c < 8 ? c : "8;5;" + c);
+        const prefix3 = `  ${colorCode};1m${name} \x1B[0m`;
+        args[0] = prefix3 + args[0].split("\n").join("\n" + prefix3);
+        args.push(colorCode + "m+" + module.exports.humanize(this.diff) + "\x1B[0m");
+      } else {
+        args[0] = getDate() + name + " " + args[0];
+      }
+    }
+    function getDate() {
+      if (exports.inspectOpts.hideDate) {
+        return "";
+      }
+      return (/* @__PURE__ */ new Date()).toISOString() + " ";
+    }
+    function log(...args) {
+      return process.stderr.write(util.formatWithOptions(exports.inspectOpts, ...args) + "\n");
+    }
+    function save(namespaces) {
+      if (namespaces) {
+        process.env.DEBUG = namespaces;
+      } else {
+        delete process.env.DEBUG;
+      }
+    }
+    function load() {
+      return process.env.DEBUG;
+    }
+    function init(debug) {
+      debug.inspectOpts = {};
+      const keys = Object.keys(exports.inspectOpts);
+      for (let i = 0; i < keys.length; i++) {
+        debug.inspectOpts[keys[i]] = exports.inspectOpts[keys[i]];
+      }
+    }
+    module.exports = require_common()(exports);
+    var { formatters } = module.exports;
+    formatters.o = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util.inspect(v, this.inspectOpts).split("\n").map((str) => str.trim()).join(" ");
+    };
+    formatters.O = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util.inspect(v, this.inspectOpts);
+    };
+  }
+});
+
+// node_modules/debug/src/index.js
+var require_src = __commonJS({
+  "node_modules/debug/src/index.js"(exports, module) {
+    if (typeof process === "undefined" || process.type === "renderer" || process.browser === true || process.__nwjs) {
+      module.exports = require_browser();
+    } else {
+      module.exports = require_node();
+    }
+  }
+});
+
+// node_modules/agent-base/dist/helpers.js
+var require_helpers = __commonJS({
+  "node_modules/agent-base/dist/helpers.js"(exports) {
+    "use strict";
+    var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
+    }) : (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      o[k2] = m[k];
+    }));
+    var __setModuleDefault = exports && exports.__setModuleDefault || (Object.create ? (function(o, v) {
+      Object.defineProperty(o, "default", { enumerable: true, value: v });
+    }) : function(o, v) {
+      o["default"] = v;
+    });
+    var __importStar = exports && exports.__importStar || function(mod) {
+      if (mod && mod.__esModule) return mod;
+      var result = {};
+      if (mod != null) {
+        for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+      }
+      __setModuleDefault(result, mod);
+      return result;
+    };
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.req = exports.json = exports.toBuffer = void 0;
+    var http2 = __importStar(__require("http"));
+    var https2 = __importStar(__require("https"));
+    async function toBuffer(stream) {
+      let length = 0;
+      const chunks = [];
+      for await (const chunk of stream) {
+        length += chunk.length;
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks, length);
+    }
+    exports.toBuffer = toBuffer;
+    async function json(stream) {
+      const buf = await toBuffer(stream);
+      const str = buf.toString("utf8");
+      try {
+        return JSON.parse(str);
+      } catch (_err) {
+        const err = _err;
+        err.message += ` (input: ${str})`;
+        throw err;
+      }
+    }
+    exports.json = json;
+    function req(url, opts = {}) {
+      const href = typeof url === "string" ? url : url.href;
+      const req2 = (href.startsWith("https:") ? https2 : http2).request(url, opts);
+      const promise = new Promise((resolve4, reject) => {
+        req2.once("response", resolve4).once("error", reject).end();
+      });
+      req2.then = promise.then.bind(promise);
+      return req2;
+    }
+    exports.req = req;
+  }
+});
+
+// node_modules/agent-base/dist/index.js
+var require_dist = __commonJS({
+  "node_modules/agent-base/dist/index.js"(exports) {
+    "use strict";
+    var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
+    }) : (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      o[k2] = m[k];
+    }));
+    var __setModuleDefault = exports && exports.__setModuleDefault || (Object.create ? (function(o, v) {
+      Object.defineProperty(o, "default", { enumerable: true, value: v });
+    }) : function(o, v) {
+      o["default"] = v;
+    });
+    var __importStar = exports && exports.__importStar || function(mod) {
+      if (mod && mod.__esModule) return mod;
+      var result = {};
+      if (mod != null) {
+        for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+      }
+      __setModuleDefault(result, mod);
+      return result;
+    };
+    var __exportStar = exports && exports.__exportStar || function(m, exports2) {
+      for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports2, p)) __createBinding(exports2, m, p);
+    };
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.Agent = void 0;
+    var net = __importStar(__require("net"));
+    var http2 = __importStar(__require("http"));
+    var https_1 = __require("https");
+    __exportStar(require_helpers(), exports);
+    var INTERNAL = Symbol("AgentBaseInternalState");
+    var Agent = class extends http2.Agent {
+      constructor(opts) {
+        super(opts);
+        this[INTERNAL] = {};
+      }
+      /**
+       * Determine whether this is an `http` or `https` request.
+       */
+      isSecureEndpoint(options) {
+        if (options) {
+          if (typeof options.secureEndpoint === "boolean") {
+            return options.secureEndpoint;
+          }
+          if (typeof options.protocol === "string") {
+            return options.protocol === "https:";
+          }
+        }
+        const { stack } = new Error();
+        if (typeof stack !== "string")
+          return false;
+        return stack.split("\n").some((l) => l.indexOf("(https.js:") !== -1 || l.indexOf("node:https:") !== -1);
+      }
+      // In order to support async signatures in `connect()` and Node's native
+      // connection pooling in `http.Agent`, the array of sockets for each origin
+      // has to be updated synchronously. This is so the length of the array is
+      // accurate when `addRequest()` is next called. We achieve this by creating a
+      // fake socket and adding it to `sockets[origin]` and incrementing
+      // `totalSocketCount`.
+      incrementSockets(name) {
+        if (this.maxSockets === Infinity && this.maxTotalSockets === Infinity) {
+          return null;
+        }
+        if (!this.sockets[name]) {
+          this.sockets[name] = [];
+        }
+        const fakeSocket = new net.Socket({ writable: false });
+        this.sockets[name].push(fakeSocket);
+        this.totalSocketCount++;
+        return fakeSocket;
+      }
+      decrementSockets(name, socket) {
+        if (!this.sockets[name] || socket === null) {
+          return;
+        }
+        const sockets = this.sockets[name];
+        const index = sockets.indexOf(socket);
+        if (index !== -1) {
+          sockets.splice(index, 1);
+          this.totalSocketCount--;
+          if (sockets.length === 0) {
+            delete this.sockets[name];
+          }
+        }
+      }
+      // In order to properly update the socket pool, we need to call `getName()` on
+      // the core `https.Agent` if it is a secureEndpoint.
+      getName(options) {
+        const secureEndpoint = this.isSecureEndpoint(options);
+        if (secureEndpoint) {
+          return https_1.Agent.prototype.getName.call(this, options);
+        }
+        return super.getName(options);
+      }
+      createSocket(req, options, cb) {
+        const connectOpts = {
+          ...options,
+          secureEndpoint: this.isSecureEndpoint(options)
+        };
+        const name = this.getName(connectOpts);
+        const fakeSocket = this.incrementSockets(name);
+        Promise.resolve().then(() => this.connect(req, connectOpts)).then((socket) => {
+          this.decrementSockets(name, fakeSocket);
+          if (socket instanceof http2.Agent) {
+            try {
+              return socket.addRequest(req, connectOpts);
+            } catch (err) {
+              return cb(err);
+            }
+          }
+          this[INTERNAL].currentSocket = socket;
+          super.createSocket(req, options, cb);
+        }, (err) => {
+          this.decrementSockets(name, fakeSocket);
+          cb(err);
+        });
+      }
+      createConnection() {
+        const socket = this[INTERNAL].currentSocket;
+        this[INTERNAL].currentSocket = void 0;
+        if (!socket) {
+          throw new Error("No socket was returned in the `connect()` function");
+        }
+        return socket;
+      }
+      get defaultPort() {
+        return this[INTERNAL].defaultPort ?? (this.protocol === "https:" ? 443 : 80);
+      }
+      set defaultPort(v) {
+        if (this[INTERNAL]) {
+          this[INTERNAL].defaultPort = v;
+        }
+      }
+      get protocol() {
+        return this[INTERNAL].protocol ?? (this.isSecureEndpoint() ? "https:" : "http:");
+      }
+      set protocol(v) {
+        if (this[INTERNAL]) {
+          this[INTERNAL].protocol = v;
+        }
+      }
+    };
+    exports.Agent = Agent;
+  }
+});
+
+// node_modules/https-proxy-agent/dist/parse-proxy-response.js
+var require_parse_proxy_response = __commonJS({
+  "node_modules/https-proxy-agent/dist/parse-proxy-response.js"(exports) {
+    "use strict";
+    var __importDefault = exports && exports.__importDefault || function(mod) {
+      return mod && mod.__esModule ? mod : { "default": mod };
+    };
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.parseProxyResponse = void 0;
+    var debug_1 = __importDefault(require_src());
+    var debug = (0, debug_1.default)("https-proxy-agent:parse-proxy-response");
+    function parseProxyResponse(socket) {
+      return new Promise((resolve4, reject) => {
+        let buffersLength = 0;
+        const buffers = [];
+        function read() {
+          const b = socket.read();
+          if (b)
+            ondata(b);
+          else
+            socket.once("readable", read);
+        }
+        function cleanup() {
+          socket.removeListener("end", onend);
+          socket.removeListener("error", onerror);
+          socket.removeListener("readable", read);
+        }
+        function onend() {
+          cleanup();
+          debug("onend");
+          reject(new Error("Proxy connection ended before receiving CONNECT response"));
+        }
+        function onerror(err) {
+          cleanup();
+          debug("onerror %o", err);
+          reject(err);
+        }
+        function ondata(b) {
+          buffers.push(b);
+          buffersLength += b.length;
+          const buffered = Buffer.concat(buffers, buffersLength);
+          const endOfHeaders = buffered.indexOf("\r\n\r\n");
+          if (endOfHeaders === -1) {
+            debug("have not received end of HTTP headers yet...");
+            read();
+            return;
+          }
+          const headerParts = buffered.slice(0, endOfHeaders).toString("ascii").split("\r\n");
+          const firstLine = headerParts.shift();
+          if (!firstLine) {
+            socket.destroy();
+            return reject(new Error("No header received from proxy CONNECT response"));
+          }
+          const firstLineParts = firstLine.split(" ");
+          const statusCode = +firstLineParts[1];
+          const statusText = firstLineParts.slice(2).join(" ");
+          const headers = {};
+          for (const header of headerParts) {
+            if (!header)
+              continue;
+            const firstColon = header.indexOf(":");
+            if (firstColon === -1) {
+              socket.destroy();
+              return reject(new Error(`Invalid header from proxy CONNECT response: "${header}"`));
+            }
+            const key = header.slice(0, firstColon).toLowerCase();
+            const value = header.slice(firstColon + 1).trimStart();
+            const current = headers[key];
+            if (typeof current === "string") {
+              headers[key] = [current, value];
+            } else if (Array.isArray(current)) {
+              current.push(value);
+            } else {
+              headers[key] = value;
+            }
+          }
+          debug("got proxy server response: %o %o", firstLine, headers);
+          cleanup();
+          resolve4({
+            connect: {
+              statusCode,
+              statusText,
+              headers
+            },
+            buffered
+          });
+        }
+        socket.on("error", onerror);
+        socket.on("end", onend);
+        read();
+      });
+    }
+    exports.parseProxyResponse = parseProxyResponse;
+  }
+});
+
+// node_modules/https-proxy-agent/dist/index.js
+var require_dist2 = __commonJS({
+  "node_modules/https-proxy-agent/dist/index.js"(exports) {
+    "use strict";
+    var __createBinding = exports && exports.__createBinding || (Object.create ? (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
+    }) : (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      o[k2] = m[k];
+    }));
+    var __setModuleDefault = exports && exports.__setModuleDefault || (Object.create ? (function(o, v) {
+      Object.defineProperty(o, "default", { enumerable: true, value: v });
+    }) : function(o, v) {
+      o["default"] = v;
+    });
+    var __importStar = exports && exports.__importStar || function(mod) {
+      if (mod && mod.__esModule) return mod;
+      var result = {};
+      if (mod != null) {
+        for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+      }
+      __setModuleDefault(result, mod);
+      return result;
+    };
+    var __importDefault = exports && exports.__importDefault || function(mod) {
+      return mod && mod.__esModule ? mod : { "default": mod };
+    };
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.HttpsProxyAgent = void 0;
+    var net = __importStar(__require("net"));
+    var tls = __importStar(__require("tls"));
+    var assert_1 = __importDefault(__require("assert"));
+    var debug_1 = __importDefault(require_src());
+    var agent_base_1 = require_dist();
+    var url_1 = __require("url");
+    var parse_proxy_response_1 = require_parse_proxy_response();
+    var debug = (0, debug_1.default)("https-proxy-agent");
+    var setServernameFromNonIpHost = (options) => {
+      if (options.servername === void 0 && options.host && !net.isIP(options.host)) {
+        return {
+          ...options,
+          servername: options.host
+        };
+      }
+      return options;
+    };
+    var HttpsProxyAgent2 = class extends agent_base_1.Agent {
+      constructor(proxy, opts) {
+        super(opts);
+        this.options = { path: void 0 };
+        this.proxy = typeof proxy === "string" ? new url_1.URL(proxy) : proxy;
+        this.proxyHeaders = opts?.headers ?? {};
+        debug("Creating new HttpsProxyAgent instance: %o", this.proxy.href);
+        const host = (this.proxy.hostname || this.proxy.host).replace(/^\[|\]$/g, "");
+        const port = this.proxy.port ? parseInt(this.proxy.port, 10) : this.proxy.protocol === "https:" ? 443 : 80;
+        this.connectOpts = {
+          // Attempt to negotiate http/1.1 for proxy servers that support http/2
+          ALPNProtocols: ["http/1.1"],
+          ...opts ? omit(opts, "headers") : null,
+          host,
+          port
+        };
+      }
+      /**
+       * Called when the node-core HTTP client library is creating a
+       * new HTTP request.
+       */
+      async connect(req, opts) {
+        const { proxy } = this;
+        if (!opts.host) {
+          throw new TypeError('No "host" provided');
+        }
+        let socket;
+        if (proxy.protocol === "https:") {
+          debug("Creating `tls.Socket`: %o", this.connectOpts);
+          socket = tls.connect(setServernameFromNonIpHost(this.connectOpts));
+        } else {
+          debug("Creating `net.Socket`: %o", this.connectOpts);
+          socket = net.connect(this.connectOpts);
+        }
+        const headers = typeof this.proxyHeaders === "function" ? this.proxyHeaders() : { ...this.proxyHeaders };
+        const host = net.isIPv6(opts.host) ? `[${opts.host}]` : opts.host;
+        let payload = `CONNECT ${host}:${opts.port} HTTP/1.1\r
+`;
+        if (proxy.username || proxy.password) {
+          const auth = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+          headers["Proxy-Authorization"] = `Basic ${Buffer.from(auth).toString("base64")}`;
+        }
+        headers.Host = `${host}:${opts.port}`;
+        if (!headers["Proxy-Connection"]) {
+          headers["Proxy-Connection"] = this.keepAlive ? "Keep-Alive" : "close";
+        }
+        for (const name of Object.keys(headers)) {
+          payload += `${name}: ${headers[name]}\r
+`;
+        }
+        const proxyResponsePromise = (0, parse_proxy_response_1.parseProxyResponse)(socket);
+        socket.write(`${payload}\r
+`);
+        const { connect, buffered } = await proxyResponsePromise;
+        req.emit("proxyConnect", connect);
+        this.emit("proxyConnect", connect, req);
+        if (connect.statusCode === 200) {
+          req.once("socket", resume);
+          if (opts.secureEndpoint) {
+            debug("Upgrading socket connection to TLS");
+            return tls.connect({
+              ...omit(setServernameFromNonIpHost(opts), "host", "path", "port"),
+              socket
+            });
+          }
+          return socket;
+        }
+        socket.destroy();
+        const fakeSocket = new net.Socket({ writable: false });
+        fakeSocket.readable = true;
+        req.once("socket", (s) => {
+          debug("Replaying proxy buffer for failed request");
+          (0, assert_1.default)(s.listenerCount("data") > 0);
+          s.push(buffered);
+          s.push(null);
+        });
+        return fakeSocket;
+      }
+    };
+    HttpsProxyAgent2.protocols = ["http", "https"];
+    exports.HttpsProxyAgent = HttpsProxyAgent2;
+    function resume(socket) {
+      socket.resume();
+    }
+    function omit(obj, ...keys) {
+      const ret = {};
+      let key;
+      for (key in obj) {
+        if (!keys.includes(key)) {
+          ret[key] = obj[key];
+        }
+      }
+      return ret;
+    }
+  }
+});
+
 // src/ui/index.tsx
 import { memo as _$memo2 } from "@opentui/solid";
 import { createTextNode as _$createTextNode2 } from "@opentui/solid";
@@ -45,9 +1171,9 @@ import { createElement as _$createElement2 } from "@opentui/solid";
 import { createComponent as _$createComponent2 } from "@opentui/solid";
 import { createEffect as createEffect2, createMemo, createSignal as createSignal2, onCleanup, onMount, Show as Show2 } from "solid-js";
 import { ScrollBoxRenderable } from "@opentui/core";
-import { dirname as dirname3, resolve as resolve3, basename as basename3 } from "node:path";
-import { watch } from "node:fs";
-import { access as access2 } from "node:fs/promises";
+import { dirname as dirname4, resolve as resolve3, basename as basename3 } from "node:path";
+import { watch as watch2 } from "node:fs";
+import { access as access4 } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createHash as createHash3 } from "node:crypto";
 
@@ -335,7 +1461,7 @@ var LibraryStore = class {
   async deleteResource(id) {
     if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("\u65E0\u6548\u8D44\u6599 ID");
     return this.withJobLock(id, async () => {
-      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc")]) {
+      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc"), join(this.internal, "media", id + ".moyuvid")]) {
         await unlink(path).catch((error) => {
           if (error.code !== "ENOENT") throw error;
         });
@@ -564,14 +1690,17 @@ function sidebarDock(reader, viewport, changed = () => {
 
 // src/ui/video.tsx
 import { createTextNode as _$createTextNode } from "@opentui/solid";
-import { effect as _$effect } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
+import { effect as _$effect } from "@opentui/solid";
 import { insert as _$insert } from "@opentui/solid";
 import { memo as _$memo } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
 import { createEffect, createSignal, For, Show, untrack } from "solid-js";
+import { watch } from "node:fs";
+import { access as access3 } from "node:fs/promises";
+import { join as join6 } from "node:path";
 
 // src/media/runtime.mjs
 import { spawn, execFile } from "node:child_process";
@@ -858,6 +1987,489 @@ async function resolveLocalVideo(resource) {
   return { ...await inspectVideo(path), id: resource.id, title: resource.title };
 }
 
+// src/services/video-ingestion.mjs
+import { spawn as spawn2, execFile as execFile2 } from "node:child_process";
+import { access as access2, mkdir as mkdir5, mkdtemp, readdir as readdir5, stat as stat4, rm as rm3 } from "node:fs/promises";
+import { join as join5, delimiter as delimiter2, dirname as dirname3, extname as extname3 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { constants as constants2 } from "node:fs";
+import { promisify as promisify2 } from "node:util";
+
+// src/media/settings.mjs
+import { readFile as readFile4, unlink as unlink2, mkdir as mkdir3 } from "node:fs/promises";
+import { join as join3 } from "node:path";
+var MediaSettings = class {
+  constructor(library) {
+    this.library = library;
+    this.path = join3(library.internal, "settings", "youtube.enc");
+  }
+  async key() {
+    try {
+      return (await this.library.vault.unseal(await readFile4(this.path))).apiKey || "";
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    return process.env.YOUTUBE_API_KEY || "";
+  }
+  async status() {
+    return { youtubeApiKeyConfigured: Boolean(await this.key()) };
+  }
+  async saveKey(input) {
+    const apiKey = input.trim();
+    if (!/^[A-Za-z0-9_-]{20,200}$/.test(apiKey)) throw new Error("API Key \u683C\u5F0F\u4E0D\u6B63\u786E\uFF0C\u8BF7\u7C98\u8D34\u5B8C\u6574\u5BC6\u94A5");
+    await mkdir3(join3(this.library.internal, "settings"), { recursive: true, mode: 448 });
+    await atomicWrite(this.path, await this.library.vault.seal({ apiKey }));
+    return this.status();
+  }
+  async removeKey() {
+    await unlink2(this.path).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+    return this.status();
+  }
+};
+
+// src/media/cache.mjs
+import { createCipheriv as createCipheriv2, createDecipheriv as createDecipheriv2, randomBytes as randomBytes2, randomUUID as randomUUID2 } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir as mkdir4, open as open2, readdir as readdir4, writeFile as writeFile3, rename as rename2, rm as rm2, stat as stat3 } from "node:fs/promises";
+import { join as join4 } from "node:path";
+import { pipeline } from "node:stream/promises";
+var magic2 = Buffer.from("MOYUVID1");
+var aad2 = Buffer.from("opencode-moyu:video:v1");
+var MAX_VIDEO_BYTES = 256 * 1024 * 1024;
+var MediaCache = class {
+  constructor(library) {
+    this.library = library;
+    this.directory = join4(library.internal, "media");
+    this.playback = join4(library.internal, "playback");
+  }
+  path(id) {
+    if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("\u65E0\u6548\u89C6\u9891 ID");
+    return join4(this.directory, id + ".moyuvid");
+  }
+  async seal(id, source) {
+    const size = (await stat3(source)).size;
+    if (size > MAX_VIDEO_BYTES) throw new Error("\u89C6\u9891\u8D85\u8FC7 256 MiB \u9650\u5236");
+    await mkdir4(this.directory, { recursive: true, mode: 448 });
+    const target = this.path(id), temporary = target + "." + randomUUID2() + ".tmp";
+    const nonce = randomBytes2(12), cipher = createCipheriv2("aes-256-gcm", await this.library.vault.key(), nonce);
+    cipher.setAAD(aad2);
+    try {
+      await writeFile3(temporary, Buffer.concat([magic2, nonce, Buffer.alloc(16)]), { flag: "wx", mode: 384 });
+      await pipeline(createReadStream(source), cipher, createWriteStream(temporary, { flags: "a" }));
+      const file = await open2(temporary, "r+");
+      try {
+        await file.write(cipher.getAuthTag(), 0, 16, 20);
+      } finally {
+        await file.close();
+      }
+      await rename2(temporary, target);
+      return target;
+    } finally {
+      await rm2(temporary, { force: true });
+    }
+  }
+  async removeStalePlayback() {
+    await mkdir4(this.playback, { recursive: true, mode: 448 });
+    for (const entry of await readdir4(this.playback, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+-[a-f0-9-]{36}$/.test(entry.name)) continue;
+      const pid = Number(entry.name.split("-")[0]);
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if (error.code === "ESRCH") await rm2(join4(this.playback, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+  async open(resource) {
+    if (resource.source.adapter === "local-video") return resolveLocalVideo(resource);
+    if (resource.kind !== "video" || !resource.metadata.managedMedia) throw new Error("\u89C6\u9891\u5C1A\u672A\u4E0B\u8F7D\uFF0C\u8BF7\u5148\u4ECE\u6765\u6E90\u5BFC\u5165");
+    const path = this.path(resource.id), info = await stat3(path);
+    if (info.size > MAX_VIDEO_BYTES + 36 || info.size < 36) throw new Error("\u89C6\u9891\u7F13\u5B58\u5927\u5C0F\u5F02\u5E38");
+    const file = await open2(path, "r"), header = Buffer.alloc(36);
+    try {
+      await file.read(header, 0, 36, 0);
+    } finally {
+      await file.close();
+    }
+    if (!header.subarray(0, 8).equals(magic2)) throw new Error("\u89C6\u9891\u7F13\u5B58\u683C\u5F0F\u4E0D\u652F\u6301");
+    await this.removeStalePlayback();
+    const temporary = join4(this.playback, process.pid + "-" + randomUUID2());
+    await mkdir4(temporary, { mode: 448 });
+    const extension = /^\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/.test(resource.metadata.extension || "") ? resource.metadata.extension : ".mp4";
+    const decoded = join4(temporary, "video" + extension);
+    const release = () => rm2(temporary, { recursive: true, force: true, maxRetries: 4, retryDelay: 200 });
+    try {
+      const decipher = createDecipheriv2("aes-256-gcm", await this.library.vault.key(false), header.subarray(8, 20));
+      decipher.setAAD(aad2);
+      decipher.setAuthTag(header.subarray(20, 36));
+      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }));
+      return { ...await inspectVideo(decoded), id: resource.id, title: resource.title, release };
+    } catch {
+      await release();
+      throw new Error("\u89C6\u9891\u7F13\u5B58\u65E0\u6CD5\u89E3\u5BC6\u6216\u64AD\u653E\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u53CA\u6587\u4EF6\u5B8C\u6574\u6027\u540E\u91CD\u65B0\u4E0B\u8F7D");
+    }
+  }
+};
+
+// src/core/http.mjs
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
+import http from "node:http";
+import https from "node:https";
+import { createGunzip, createBrotliDecompress, createInflate } from "node:zlib";
+var import_https_proxy_agent = __toESM(require_dist2(), 1);
+function isPublicAddress(address) {
+  const value = address.toLowerCase().replace(/^\[|\]$/g, "");
+  if (isIP(value) === 4) {
+    const [a, b] = value.split(".").map(Number);
+    return !(a === 0 || a === 10 || a === 127 || a >= 224 || a === 100 && b >= 64 && b <= 127 || a === 169 && b === 254 || a === 172 && b >= 16 && b <= 31 || a === 192 && (b === 168 || b === 0) || a === 198 && (b === 18 || b === 19));
+  }
+  return isIP(value) === 6 && /^[23][0-9a-f]{0,3}:/.test(value);
+}
+function httpUrl(input) {
+  const url = new URL(input);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("\u6765\u6E90\u53EA\u652F\u6301\u4E0D\u5E26\u767B\u5F55\u51ED\u636E\u7684 HTTP(S) \u5730\u5740");
+  url.hash = "";
+  return url;
+}
+function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, timeoutMs = 15e3, useProxy = true, maxRedirects = 4 } = {}) {
+  return async function readPage(input, { signal, headers = {} } = {}) {
+    let url = httpUrl(input);
+    const initialOrigin = url.origin;
+    for (let redirects = 0; redirects <= maxRedirects; redirects++) {
+      signal?.throwIfAborted();
+      const hostname = url.hostname.replace(/^\[|\]$/g, "");
+      const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true });
+      if (!addresses.length || !allowPrivate && addresses.some((item) => !isPublicAddress(item.address))) throw new Error("\u6765\u6E90\u4E0D\u80FD\u6307\u5411\u672C\u673A\u3001\u5C40\u57DF\u7F51\u6216\u4FDD\u7559\u7F51\u7EDC\u5730\u5740");
+      const pinned = addresses[0];
+      const bypass = (process.env.NO_PROXY || process.env.no_proxy || "").split(/[,\s]+/).filter(Boolean).some((value) => {
+        if (value === "*") return true;
+        const [host, port] = value.toLowerCase().split(":");
+        if (port && port !== (url.port || (url.protocol === "https:" ? "443" : "80"))) return false;
+        const suffix = host.replace(/^\*?\./, "");
+        return hostname === suffix || hostname.endsWith("." + suffix);
+      });
+      const proxy = !useProxy || bypass ? void 0 : url.protocol === "https:" ? process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy : process.env.HTTP_PROXY || process.env.http_proxy;
+      const agent = proxy ? new import_https_proxy_agent.HttpsProxyAgent(proxy) : void 0;
+      const result = await new Promise((resolve4, reject) => {
+        const request = (url.protocol === "https:" ? https : http).get(url, {
+          signal,
+          agent,
+          lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
+          headers: { "User-Agent": "OpenCode-Moyu/0.3 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url.origin === initialOrigin ? headers : {} }
+        }, async (response) => {
+          try {
+            const status = response.statusCode ?? 0;
+            if ([301, 302, 303, 307, 308].includes(status) && response.headers.location) {
+              response.resume();
+              resolve4({ redirect: response.headers.location });
+              return;
+            }
+            if (status < 200 || status >= 300) {
+              response.resume();
+              throw new Error(`\u6765\u6E90\u8FD4\u56DE HTTP ${status}\uFF1B\u505C\u6B62\u6293\u53D6`);
+            }
+            const contentType = String(response.headers["content-type"] ?? "text/html");
+            if (!/^(text\/|application\/(xhtml\+xml|xml|json))/i.test(contentType)) {
+              response.resume();
+              throw new Error(`\u5F53\u524D\u6587\u5B57\u6765\u6E90\u4E0D\u652F\u6301\uFF1A${contentType}`);
+            }
+            const encoding = response.headers["content-encoding"];
+            const stream = encoding === "gzip" ? response.pipe(createGunzip()) : encoding === "br" ? response.pipe(createBrotliDecompress()) : encoding === "deflate" ? response.pipe(createInflate()) : response;
+            const chunks = [];
+            let size = 0;
+            for await (const chunk of stream) {
+              size += chunk.length;
+              if (size > maxBytes) {
+                request.destroy();
+                throw new Error("\u6765\u6E90\u9875\u9762\u8D85\u8FC7\u5927\u5C0F\u9650\u5236");
+              }
+              chunks.push(chunk);
+            }
+            const bytes = Buffer.concat(chunks);
+            const declared = contentType.match(/charset\s*=\s*["']?([^\s;"']+)/i)?.[1] ?? bytes.subarray(0, 4096).toString("latin1").match(/charset\s*=\s*["']?([\w-]+)/i)?.[1];
+            const text = declared ? new TextDecoder(declared).decode(bytes) : decodeBook(bytes);
+            resolve4({ url: url.href, text, contentType });
+          } catch (error) {
+            reject(error);
+          }
+        });
+        request.setTimeout(timeoutMs, () => request.destroy(new Error("\u6765\u6E90\u8BF7\u6C42\u8D85\u65F6")));
+        const deadline = setTimeout(() => request.destroy(new Error("\u6765\u6E90\u8BF7\u6C42\u8D85\u8FC7\u603B\u65F6\u9650")), timeoutMs);
+        request.on("close", () => clearTimeout(deadline));
+        request.on("error", reject);
+      });
+      if (result.redirect) {
+        url = httpUrl(new URL(result.redirect, url).href);
+        continue;
+      }
+      return result;
+    }
+    throw new Error("\u6765\u6E90\u91CD\u5B9A\u5411\u6B21\u6570\u8FC7\u591A");
+  };
+}
+
+// src/sources/video-platforms.mjs
+var short = (value, max = 180) => cleanText(String(value ?? "").replace(/<[^>]*>/g, "")).slice(0, max);
+function videoUrl(input) {
+  const value = input.trim();
+  if (/^BV[\da-zA-Z]{10}$/.test(value)) return { platform: "bilibili", id: value, url: `https://www.bilibili.com/video/${value}/` };
+  if (/^[\w-]{11}$/.test(value)) return { platform: "youtube", id: value, url: `https://www.youtube.com/watch?v=${value}` };
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("\u8BF7\u8F93\u5165 B \u7AD9 BV \u53F7\u6216\u5B8C\u6574\u89C6\u9891\u94FE\u63A5 / YouTube \u89C6\u9891\u94FE\u63A5");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.port) throw new Error("\u89C6\u9891\u94FE\u63A5\u683C\u5F0F\u4E0D\u652F\u6301");
+  const host = url.hostname.toLowerCase();
+  if (["www.bilibili.com", "bilibili.com", "m.bilibili.com"].includes(host)) {
+    const id = url.pathname.match(/^\/video\/(BV[\da-zA-Z]{10}|av\d+)(?:\/|$)/)?.[1];
+    if (id) {
+      const page = Math.max(1, Math.min(1e3, Number(url.searchParams.get("p")) || 1));
+      return { platform: "bilibili", id, page, url: `https://www.bilibili.com/video/${id}/${page > 1 ? "?p=" + Math.floor(page) : ""}` };
+    }
+  }
+  if (["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"].includes(host)) {
+    const id = host === "youtu.be" ? url.pathname.slice(1) : url.pathname === "/watch" ? url.searchParams.get("v") : url.pathname.match(/^\/(?:shorts|embed)\/([^/]+)/)?.[1];
+    if (id && /^[\w-]{11}$/.test(id)) return { platform: "youtube", id, url: `https://www.youtube.com/watch?v=${id}` };
+  }
+  throw new Error("\u4EC5\u652F\u6301 B \u7AD9\u5355\u4E2A\u89C6\u9891\u548C YouTube \u5355\u4E2A\u89C6\u9891\u94FE\u63A5\uFF1B\u77ED\u94FE\u63A5\u8BF7\u5148\u590D\u5236\u5B8C\u6574\u5730\u5740");
+}
+function createVideoPlatforms({ settings, read = createHttpClient({ maxBytes: 1024 * 1024, maxRedirects: 0 }) }) {
+  async function youtube(path, params, signal) {
+    const key = await settings.key();
+    if (!key) throw new Error("\u8BF7\u5148\u5728\u300C\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u300D\u586B\u5199 YouTube API Key");
+    const url = new URL("https://www.googleapis.com/youtube/v3/" + path);
+    for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
+    try {
+      const result = await read(url.href, { signal, headers: { Accept: "application/json", "X-Goog-Api-Key": key } });
+      const data = JSON.parse(result.text);
+      if (data.error) throw new Error("API_ERROR");
+      return data;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      const code = String(error).match(/HTTP\s+(\d{3})/)?.[1];
+      throw new Error(`YouTube API \u8BF7\u6C42\u5931\u8D25${code ? "\uFF08HTTP " + code + "\uFF09" : ""}\uFF0C\u8BF7\u68C0\u67E5 API Key\u3001YouTube Data API v3 \u662F\u5426\u542F\u7528\u3001\u914D\u989D\u548C\u7F51\u7EDC\u3002`);
+    }
+  }
+  async function bili(path, params, signal) {
+    const url = new URL("https://api.bilibili.com" + path);
+    for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
+    const result = await read(url.href, { signal, headers: { Accept: "application/json", Referer: "https://www.bilibili.com/" } });
+    const data = JSON.parse(result.text);
+    if (data.code !== 0) throw new Error(`B \u7AD9\u63A5\u53E3\u8FD4\u56DE ${Number(data.code)}\uFF0C\u5F53\u524D\u6765\u6E90\u4E0D\u53EF\u7528\uFF1B\u8BF7\u68C0\u67E5\u94FE\u63A5\u6216\u7A0D\u540E\u91CD\u8BD5`);
+    return data.data;
+  }
+  async function search({ platform, query, limit = 5, signal }) {
+    query = String(query).trim().slice(0, 200);
+    if (!query) throw new Error("\u8BF7\u8F93\u5165\u89C6\u9891\u5173\u952E\u8BCD");
+    limit = Math.max(1, Math.min(5, Math.floor(Number(limit) || 5)));
+    if (platform === "youtube") {
+      const data2 = await youtube("search", { part: "snippet", type: "video", q: query, maxResults: limit, fields: "items(id/videoId,snippet(title,channelTitle,description))" }, signal);
+      return (data2.items || []).filter((item) => /^[\w-]{11}$/.test(item.id?.videoId)).map((item) => ({ platform, id: item.id.videoId, url: `https://www.youtube.com/watch?v=${item.id.videoId}`, title: short(item.snippet.title), author: short(item.snippet.channelTitle, 80), description: short(item.snippet.description, 200) })).slice(0, limit);
+    }
+    if (platform !== "bilibili") throw new Error("\u672A\u77E5\u89C6\u9891\u6765\u6E90");
+    const data = await bili("/x/web-interface/search/type", { search_type: "video", keyword: query, page: 1, page_size: limit }, signal);
+    return (data.result || []).filter((item) => /^BV[\da-zA-Z]{10}$/.test(item.bvid)).slice(0, limit).map((item) => ({ platform, id: item.bvid, url: `https://www.bilibili.com/video/${item.bvid}/`, title: short(item.title), author: short(item.author, 80), description: short(item.description, 200), duration: short(item.duration, 20) }));
+  }
+  async function info(input, { signal } = {}) {
+    const target = videoUrl(input);
+    if (target.platform === "youtube") {
+      const data2 = await youtube("videos", { part: "snippet,contentDetails,statistics", id: target.id, fields: "items(id,snippet(title,channelTitle,description),contentDetails/duration,statistics/viewCount)" }, signal);
+      const item = data2.items?.[0];
+      if (!item) throw new Error("YouTube \u672A\u8FD4\u56DE\u8FD9\u4E2A\u89C6\u9891\uFF0C\u53EF\u80FD\u5DF2\u5220\u9664\u3001\u975E\u516C\u5F00\u6216\u4E0D\u53EF\u8BBF\u95EE");
+      return { ...target, title: short(item.snippet.title), author: short(item.snippet.channelTitle, 80), description: short(item.snippet.description, 600), duration: short(item.contentDetails?.duration, 40), views: Number(item.statistics?.viewCount) || 0 };
+    }
+    const data = await bili("/x/web-interface/view", target.id.startsWith("av") ? { aid: target.id.slice(2) } : { bvid: target.id }, signal);
+    return { ...target, title: short(data.title), author: short(data.owner?.name, 80), description: short(data.desc, 600), duration: Number(data.duration) || 0, views: Number(data.stat?.view) || 0 };
+  }
+  return { search, info, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
+}
+
+// src/services/video-ingestion.mjs
+var execute2 = promisify2(execFile2);
+async function downloaderBinary() {
+  const paths = process.env.MOYU_YTDLP ? [process.env.MOYU_YTDLP] : [
+    join5(homedir3(), ".local/share/opencode-moyu/media/bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
+    ...String(process.env.PATH || "").split(delimiter2).map((dir) => join5(dir, process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"))
+  ];
+  for (const path of paths) {
+    try {
+      await access2(path, constants2.X_OK);
+      await execute2(path, ["--version"], { timeout: 5e3, maxBuffer: 1024, windowsHide: true });
+      return path;
+    } catch {
+    }
+  }
+  throw new Error("\u672A\u627E\u5230 yt-dlp\uFF0C\u8BF7\u5B89\u88C5\u5B98\u65B9 yt-dlp\uFF0C\u6216\u7528 MOYU_YTDLP \u6307\u5B9A\u8DEF\u5F84");
+}
+function safeError(message) {
+  return cleanText(String(message)).replace(/https?:\/\/\S+/g, "[\u6765\u6E90\u5730\u5740]").slice(-600);
+}
+function downloadFailure(message, platform) {
+  if (/sign in to confirm|not a bot|captcha|human.verification|verify.you.are.human/i.test(message)) return `${platform === "youtube" ? "YouTube" : "\u89C6\u9891\u6765\u6E90"} \u8981\u6C42\u767B\u5F55\u6216\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D\u3002API Key \u4EC5\u7528\u4E8E\u6570\u636E\u67E5\u8BE2\uFF0C\u4E0D\u80FD\u89E3\u9664\u89C6\u9891\u8BBF\u95EE\u9650\u5236\u3002`;
+  if (/private video|members.only|premium|age.restricted|login required|sign in/i.test(message)) return "\u89C6\u9891\u9700\u8981\u8D26\u6237\u6216\u989D\u5916\u8BBF\u95EE\u6743\u9650\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D";
+  if (/video is unavailable|video unavailable|removed|does not exist/i.test(message)) return "\u89C6\u9891\u4E0D\u53EF\u7528\u3001\u5DF2\u5220\u9664\u6216\u5F53\u524D\u7F51\u7EDC\u65E0\u6CD5\u8BBF\u95EE\uFF0C\u672A\u5165\u5E93";
+  return "\u89C6\u9891\u6765\u6E90\u83B7\u53D6\u5931\u8D25\uFF1A" + safeError(message);
+}
+async function downloadVideo(url, directory, { signal, onProgress = (_value) => {
+}, binary = downloaderBinary, launch = spawn2 } = {}) {
+  const target = videoUrl(url);
+  signal?.throwIfAborted();
+  const executable = await binary(), ffmpeg = await mediaBinary("ffmpeg");
+  signal?.throwIfAborted();
+  const args = ["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--playlist-items", "1", "--no-remote-components", "--js-runtimes", "node", "--socket-timeout", "15", "--retries", "0", "--extractor-retries", "0", "--fragment-retries", "0", "--abort-on-unavailable-fragments", "--concurrent-fragments", "1", "--match-filters", "!is_live & duration <= 3600", "--max-filesize", String(MAX_VIDEO_BYTES), "--format", "bv*[height<=480]+ba/b[height<=480]", "--merge-output-format", "mp4/mkv", "--ffmpeg-location", dirname3(ffmpeg), "--no-mtime", "--newline", "--progress", "--progress-template", "download:MOYU_PROGRESS:%(progress._percent_str)s", "--print", "before_dl:MOYU_META:%(title)j", "--no-simulate", "--paths", directory, "--output", "video.%(ext)s", "--", target.url];
+  return new Promise((resolve4, reject) => {
+    const child = launch(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
+    let stderr = "", partial = "", title = "", failure, finished = false;
+    const terminate = (error) => {
+      if (finished || failure) return;
+      failure = error;
+      try {
+        if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+        else spawn2("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }).once("error", () => child.kill());
+      } catch {
+      }
+      const timer = setTimeout(() => {
+        try {
+          if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+          else child.kill("SIGKILL");
+        } catch {
+        }
+      }, 1500);
+      timer.unref?.();
+      child.once("close", () => clearTimeout(timer));
+    };
+    const abort = () => terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u5DF2\u53D6\u6D88"));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    child.stdout.on("data", (chunk) => {
+      partial += chunk.toString();
+      if (partial.length > 8192) partial = partial.slice(-8192);
+      const lines = partial.split(/\r?\n/);
+      partial = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("MOYU_META:")) {
+          try {
+            title = cleanText(JSON.parse(line.slice(10))).slice(0, 180);
+          } catch {
+          }
+        }
+        const match = line.match(/MOYU_PROGRESS:\s*([\d.]+)%/);
+        if (match) onProgress({ percent: Math.min(99, Number(match[1])), phase: "downloading" });
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-4e3);
+    });
+    const deadline = setTimeout(() => terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u8D85\u8FC7 10 \u5206\u949F\uFF0C\u5DF2\u505C\u6B62")), 6e5);
+    let checking = false;
+    const quota = setInterval(async () => {
+      if (checking || finished) return;
+      checking = true;
+      try {
+        const files = await readdir5(directory);
+        const sizes = await Promise.all(files.map((name) => stat4(join5(directory, name)).then((item) => item.size).catch(() => 0)));
+        if (sizes.reduce((sum, size) => sum + size, 0) > MAX_VIDEO_BYTES * 2) terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u4E34\u65F6\u6587\u4EF6\u8D85\u8FC7 512 MiB \u9650\u5236"));
+      } catch (error) {
+        if (!finished) terminate(new Error("\u65E0\u6CD5\u68C0\u67E5\u4E0B\u8F7D\u7F13\u5B58\uFF1A" + safeError(error.message)));
+      } finally {
+        checking = false;
+      }
+    }, 500);
+    const clean = () => {
+      finished = true;
+      clearTimeout(deadline);
+      clearInterval(quota);
+      signal?.removeEventListener("abort", abort);
+    };
+    child.once("error", (error) => {
+      clean();
+      reject(new Error("\u4E0B\u8F7D\u5668\u65E0\u6CD5\u542F\u52A8\uFF1A" + safeError(error.message)));
+    });
+    child.once("close", async (code) => {
+      clean();
+      if (failure) return reject(failure);
+      if (code !== 0) return reject(new Error(downloadFailure(stderr || "\u4E0B\u8F7D\u5668\u9000\u51FA " + code, target.platform)));
+      try {
+        const names = (await readdir5(directory)).filter((name) => /^video\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg)$/.test(name));
+        if (names.length !== 1) throw new Error("\u672A\u53D6\u5F97\u5B8C\u6574\u89C6\u9891\uFF0C\u53EF\u80FD\u53D7\u767B\u5F55\u3001\u65F6\u957F\u3001\u5927\u5C0F\u6216\u683C\u5F0F\u9650\u5236");
+        const path = join5(directory, names[0]);
+        if ((await stat4(path)).size > MAX_VIDEO_BYTES) throw new Error("\u89C6\u9891\u8D85\u8FC7 256 MiB \u9650\u5236");
+        resolve4({ path, title });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+function createVideoIngestion({ directory, keyFile, read, download = downloadVideo }) {
+  const store = new LibraryStore(directory, { keyFile }), settings = new MediaSettings(store), cache = new MediaCache(store);
+  const platforms = createVideoPlatforms({ settings, ...read ? { read } : {} });
+  async function cleanup() {
+    await cache.removeStalePlayback();
+    const workRoot = join5(store.internal, "downloads");
+    await mkdir5(workRoot, { recursive: true, mode: 448 });
+    for (const entry of await readdir5(workRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+-[a-f0-9]{24}-[A-Za-z0-9]{6}$/.test(entry.name)) continue;
+      try {
+        process.kill(Number(entry.name.split("-")[0]), 0);
+      } catch (error) {
+        if (error.code === "ESRCH") await rm3(join5(workRoot, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+  async function importVideo({ url, signal, onProgress = (_value) => {
+  } }) {
+    const target = videoUrl(url), id = stableId("video:" + target.url);
+    return store.withJobLock(id, async () => {
+      signal?.throwIfAborted();
+      const existing = (await store.resources()).find((item) => item.id === id);
+      if (existing) {
+        try {
+          await access2(cache.path(id));
+          return { resource: existing, cached: true };
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+      }
+      const workRoot = join5(store.internal, "downloads");
+      await mkdir5(workRoot, { recursive: true, mode: 448 });
+      const work = await mkdtemp(join5(workRoot, process.pid + "-" + id + "-"));
+      try {
+        onProgress({ phase: "resolving", percent: 0 });
+        let details;
+        if (target.platform === "bilibili" || await settings.key()) {
+          try {
+            details = await platforms.info(target.url, { signal });
+          } catch {
+            signal?.throwIfAborted();
+          }
+        }
+        const media = await download(target.url, work, { signal, onProgress });
+        signal?.throwIfAborted();
+        const info = await inspectVideo(media.path);
+        signal?.throwIfAborted();
+        onProgress({ phase: "encrypting", percent: 99 });
+        const path = await cache.seal(id, media.path);
+        signal?.throwIfAborted();
+        const resource = { schemaVersion: 1, id, kind: "video", title: media.title || details?.title || info.title, source: { adapter: target.platform, url: target.url }, assets: [{ role: "media", mime: "application/x-moyu-video", path }], metadata: { author: details?.author, description: details?.description, views: details?.views, metadataFetched: Boolean(details), width: info.width, height: info.height, duration: info.duration, hasAudio: info.hasAudio, managedMedia: true, extension: extname3(media.path) }, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+        await store.putResource(resource);
+        return { resource, cached: false };
+      } catch (error) {
+        await rm3(cache.path(id), { force: true });
+        throw error;
+      } finally {
+        await rm3(work, { recursive: true, force: true });
+      }
+    });
+  }
+  return { store, settings, cache, platforms, importVideo, cleanup };
+}
+
 // src/ui/video.tsx
 var prefix = "opencode-moyu:video:";
 function createVideoReader(api, library, settings) {
@@ -875,6 +2487,14 @@ function createVideoReader(api, library, settings) {
   });
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [downloadProgress, setDownloadProgress] = createSignal("");
+  const sources = createVideoIngestion({
+    directory: library.directory,
+    keyFile: library.vault.keyFile
+  });
+  let downloadAbort;
+  let downloadTask;
+  const loads = /* @__PURE__ */ new Set();
   let token = 0, resizeTimer;
   const colors = /* @__PURE__ */ new Map();
   function color(value) {
@@ -915,14 +2535,61 @@ function createVideoReader(api, library, settings) {
     player.pause();
     save();
   }
-  async function load(input, resource) {
+  let removalTimer;
+  const resourceWatcher = watch(join6(library.internal, "resources"), (_event, filename) => {
+    const current = video();
+    if (!current || filename?.toString() !== current.id + ".enc") return;
+    clearTimeout(removalTimer);
+    removalTimer = setTimeout(() => {
+      void access3(join6(library.internal, "resources", current.id + ".enc")).catch((cause) => {
+        if (cause.code !== "ENOENT" || api.lifecycle.signal.aborted || video()?.id !== current.id) return;
+        ++token;
+        pause();
+        setVideo(void 0);
+        setFrame([]);
+        player.video = void 0;
+        api.kv.set(prefix + current.id, 0);
+        api.kv.set(prefix + "last", "");
+        void current.release?.().catch(() => {
+        });
+      });
+    }, 50);
+  });
+  function releaseManaged() {
+    const current = video();
+    if (!current?.release) return;
+    ++token;
+    pause();
+    setBusy(false);
+    setVideo(void 0);
+    setFrame([]);
+    player.video = void 0;
+    void current.release().catch(() => {
+    });
+  }
+  function load(input, resource) {
+    const pending = loadVideo(input, resource);
+    loads.add(pending);
+    void pending.finally(() => loads.delete(pending));
+    return pending;
+  }
+  async function loadVideo(input, resource) {
     const request = ++token;
     setBusy(true);
     setError("");
     pause();
     try {
-      const next = resource ? await resolveLocalVideo(resource) : await addLocalVideo(library, input, api.state.path.directory);
-      if (request !== token || api.lifecycle.signal.aborted || !settings.active()) return;
+      const next = resource ? await sources.cache.open(resource) : await addLocalVideo(library, input, api.state.path.directory);
+      if (request !== token || api.lifecycle.signal.aborted || !settings.active()) {
+        await next.release?.();
+        return;
+      }
+      const previous = video();
+      await previous?.release?.();
+      if (request !== token || api.lifecycle.signal.aborted || !settings.active()) {
+        await next.release?.();
+        return;
+      }
       setVideo(next);
       setFrame([]);
       settings.activate();
@@ -954,6 +2621,188 @@ function createVideoReader(api, library, settings) {
       }
     }));
   }
+  function showError(cause) {
+    if (api.lifecycle.signal.aborted) return;
+    const message = cause instanceof Error ? cause.message : String(cause);
+    setError(message);
+    api.ui.toast({
+      title: "\u89C6\u9891\u6765\u6E90",
+      message,
+      variant: "error"
+    });
+  }
+  function download(url) {
+    if (downloadTask) {
+      api.ui.toast({
+        message: "\u5DF2\u6709\u4E0B\u8F7D\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u5F85\u6216\u70B9\u51FB\u53D6\u6D88",
+        variant: "info"
+      });
+      return;
+    }
+    const pending = runDownload(url);
+    downloadTask = pending;
+    void pending.finally(() => {
+      if (downloadTask === pending) downloadTask = void 0;
+    });
+    return pending;
+  }
+  async function runDownload(url) {
+    if (downloadAbort) return api.ui.toast({
+      message: "\u5DF2\u6709\u4E0B\u8F7D\u4EFB\u52A1\uFF0C\u8BF7\u7B49\u5F85\u6216\u70B9\u51FB\u53D6\u6D88",
+      variant: "info"
+    });
+    const abort = downloadAbort = new AbortController();
+    const selection = token;
+    pause();
+    setError("");
+    setDownloadProgress("\u6B63\u5728\u89E3\u6790\u89C6\u9891\u6765\u6E90\u2026");
+    try {
+      const result = await sources.importVideo({
+        url,
+        signal: abort.signal,
+        onProgress: (progress) => {
+          if (!api.lifecycle.signal.aborted) setDownloadProgress(progress.phase === "encrypting" ? "\u6B63\u5728\u52A0\u5BC6\u5165\u5E93\u2026" : `\u6B63\u5728\u4E0B\u8F7D ${progress.percent.toFixed(0)}% \xB7 \u70B9\u51FB\u53D6\u6D88\u53EF\u505C\u6B62`);
+        }
+      });
+      if (api.lifecycle.signal.aborted || abort.signal.aborted) return;
+      api.ui.toast({
+        message: result.cached ? "\u5DF2\u590D\u7528\u89C6\u9891\u7F13\u5B58" : "\u89C6\u9891\u5DF2\u52A0\u5BC6\u5165\u5E93",
+        variant: "info"
+      });
+      if (settings.active() && token === selection) await load("", result.resource);
+    } catch (cause) {
+      if (!api.lifecycle.signal.aborted) showError(cause);
+    } finally {
+      if (downloadAbort === abort) {
+        downloadAbort = void 0;
+        setDownloadProgress("");
+      }
+    }
+  }
+  function promptUrl() {
+    settings.dialog(() => _$createComponent(api.ui.DialogPrompt, {
+      title: "\u5BFC\u5165 B \u7AD9 / YouTube \u89C6\u9891",
+      placeholder: "\u5B8C\u6574\u89C6\u9891\u94FE\u63A5\u6216 BV \u53F7\uFF0C\u6700\u9AD8 480p / 256 MiB / 60 \u5206\u949F",
+      get onCancel() {
+        return settings.close;
+      },
+      onConfirm: (url) => {
+        settings.close();
+        void download(url);
+      }
+    }));
+  }
+  function searchPlatform() {
+    settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+      title: "\u9009\u62E9\u89C6\u9891\u641C\u7D22\u6765\u6E90",
+      options: [{
+        title: "\u54D4\u54E9\u54D4\u54E9",
+        value: "bilibili",
+        description: "\u516C\u5F00\u89C6\u9891\u641C\u7D22"
+      }, {
+        title: "YouTube",
+        value: "youtube",
+        description: "\u4F7F\u7528\u672C\u5730\u4FDD\u5B58\u7684 API Key"
+      }],
+      onSelect: (platform) => {
+        settings.close();
+        settings.dialog(() => _$createComponent(api.ui.DialogPrompt, {
+          get title() {
+            return `${platform.title} \xB7 \u641C\u7D22\u89C6\u9891`;
+          },
+          placeholder: "\u8F93\u5165\u5173\u952E\u8BCD\uFF0C\u6700\u591A\u8FD4\u56DE 5 \u4E2A\u7ED3\u679C",
+          get onCancel() {
+            return settings.close;
+          },
+          onConfirm: (query) => {
+            settings.close();
+            void sources.platforms.search({
+              platform: String(platform.value),
+              query,
+              signal: api.lifecycle.signal
+            }).then((items) => {
+              if (api.lifecycle.signal.aborted || !settings.active()) return;
+              if (!items.length) return api.ui.toast({
+                message: "\u6CA1\u6709\u627E\u5230\u5339\u914D\u7684\u89C6\u9891",
+                variant: "info"
+              });
+              settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+                get title() {
+                  return `${platform.title} \xB7 \u641C\u7D22\u7ED3\u679C`;
+                },
+                placeholder: "\u70B9\u51FB\u89C6\u9891\u4E0B\u8F7D\u5230\u50CF\u7D20\u5F71\u9662",
+                get options() {
+                  return items.map((item) => ({
+                    title: item.title,
+                    value: item.url,
+                    description: item.author
+                  }));
+                },
+                onSelect: (item) => {
+                  settings.close();
+                  void download(String(item.value));
+                }
+              }));
+            }).catch(showError);
+          }
+        }));
+      }
+    }));
+  }
+  async function sourceSettings() {
+    try {
+      const status = await sources.settings.status();
+      if (api.lifecycle.signal.aborted) return;
+      settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+        title: "\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E",
+        placeholder: "API Key \u4EC5\u7528\u4E8E YouTube \u6570\u636E\u67E5\u8BE2\uFF0C\u672C\u5730\u52A0\u5BC6\u4FDD\u5B58",
+        get options() {
+          return [{
+            title: status.youtubeApiKeyConfigured ? "\u66F4\u65B0 YouTube API Key" : "\u586B\u5199 YouTube API Key",
+            value: "key",
+            description: status.youtubeApiKeyConfigured ? "\u5DF2\u914D\u7F6E \xB7 \u4E0D\u56DE\u663E\u5BC6\u94A5" : "\u542F\u7528 YouTube Data API v3 \u540E\u586B\u5199"
+          }, {
+            title: "\u79FB\u9664\u4FDD\u5B58\u7684 YouTube API Key",
+            value: "remove",
+            description: "\u4E0D\u5F71\u54CD\u5DF2\u4E0B\u8F7D\u7684\u89C6\u9891"
+          }];
+        },
+        onSelect: (item) => {
+          settings.close();
+          if (item.value === "remove") {
+            settings.dialog(() => _$createComponent(api.ui.DialogConfirm, {
+              title: "\u79FB\u9664 YouTube API Key",
+              message: "\u79FB\u9664\u672C\u5730\u4FDD\u5B58\u7684\u5BC6\u94A5\uFF1F\u82E5\u8BBE\u7F6E\u4E86 YOUTUBE_API_KEY \u73AF\u5883\u53D8\u91CF\uFF0C\u4ECD\u4F1A\u4F7F\u7528\u73AF\u5883\u53D8\u91CF\u3002",
+              get onCancel() {
+                return settings.close;
+              },
+              onConfirm: () => {
+                settings.close();
+                void sources.settings.removeKey().then(() => sourceSettings()).catch(showError);
+              }
+            }));
+            return;
+          }
+          settings.dialog(() => _$createComponent(api.ui.DialogPrompt, {
+            title: "YouTube API Key \xB7 \u672C\u5730\u52A0\u5BC6\u4FDD\u5B58",
+            placeholder: "\u7C98\u8D34\u5B8C\u6574 API Key\uFF0C\u4FDD\u5B58\u540E\u4E0D\u56DE\u663E",
+            get onCancel() {
+              return settings.close;
+            },
+            onConfirm: (key) => {
+              settings.close();
+              void sources.settings.saveKey(key).then(() => api.ui.toast({
+                message: "YouTube API Key \u5DF2\u52A0\u5BC6\u4FDD\u5B58",
+                variant: "info"
+              })).catch(showError);
+            }
+          }));
+        }
+      }));
+    } catch (cause) {
+      showError(cause);
+    }
+  }
   async function shelf() {
     try {
       const resources = (await library.resources()).filter((item) => item.kind === "video");
@@ -969,15 +2818,30 @@ function createVideoReader(api, library, settings) {
             title: "\uFF0B \u6253\u5F00\u672C\u5730\u89C6\u9891\u2026",
             value: "",
             description: "MP4 / MKV / WebM / MOV / AVI / GIF"
+          }, {
+            title: "\uFF0B B \u7AD9 / YouTube \u89C6\u9891\u94FE\u63A5\u2026",
+            value: "url",
+            description: "\u4E0B\u8F7D\u53EF\u516C\u5F00\u8BBF\u95EE\u7684\u89C6\u9891\uFF0C\u52A0\u5BC6\u5165\u5E93"
+          }, {
+            title: "\u641C\u7D22\u5728\u7EBF\u89C6\u9891\u2026",
+            value: "search",
+            description: "\u54D4\u54E9\u54D4\u54E9 / YouTube"
+          }, {
+            title: "\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u2026",
+            value: "settings",
+            description: "\u586B\u5199\u6216\u79FB\u9664 YouTube API Key"
           }, ...resources.map((item) => ({
             title: item.title,
             value: item.id,
-            description: mediaTime(item.metadata.duration) + " \xB7 \u672C\u5730\u6587\u4EF6"
+            description: mediaTime(item.metadata.duration) + (item.metadata.managedMedia ? " \xB7 " + item.source.adapter + " \xB7 \u52A0\u5BC6\u7F13\u5B58" : " \xB7 \u672C\u5730\u6587\u4EF6")
           }))];
         },
         onSelect: (item) => {
           settings.close();
           if (!item.value) prompt();
+          else if (item.value === "url") promptUrl();
+          else if (item.value === "search") searchPlatform();
+          else if (item.value === "settings") void sourceSettings();
           else void load("", resources.find((saved) => saved.id === item.value));
         }
       }));
@@ -993,7 +2857,7 @@ function createVideoReader(api, library, settings) {
     const id = api.kv.get(prefix + "last", "");
     if (!id) return;
     const resource = (await library.resources()).find((item) => item.id === id && item.kind === "video");
-    if (resource && settings.active() && !api.lifecycle.signal.aborted) await load("", resource);
+    if (resource && !video() && !busy() && settings.active() && !api.lifecycle.signal.aborted) await load("", resource);
   }
   function remove() {
     const current = video();
@@ -1001,7 +2865,7 @@ function createVideoReader(api, library, settings) {
     settings.dialog(() => _$createComponent(api.ui.DialogConfirm, {
       title: "\u4ECE\u89C6\u9891\u5E93\u79FB\u9664",
       get message() {
-        return `\u79FB\u9664\u300A${current.title}\u300B\u7684\u89C6\u9891\u8BB0\u5F55\u548C\u64AD\u653E\u8FDB\u5EA6\uFF1F\u539F\u89C6\u9891\u6587\u4EF6\u4FDD\u7559\u3002`;
+        return `\u79FB\u9664\u300A${current.title}\u300B\u7684\u8BB0\u5F55\u3001\u64AD\u653E\u8FDB\u5EA6\u53CA\u5DF2\u4E0B\u8F7D\u7684\u52A0\u5BC6\u7F13\u5B58\uFF1F\u672C\u5730\u5BFC\u5165\u7684\u539F\u6587\u4EF6\u4FDD\u7559\u3002`;
       },
       get onCancel() {
         return settings.close;
@@ -1010,6 +2874,8 @@ function createVideoReader(api, library, settings) {
         settings.close();
         pause();
         ++token;
+        void current.release?.().catch(() => {
+        });
         void library.deleteResource(current.id).then(() => {
           if (api.lifecycle.signal.aborted) return;
           api.kv.set(prefix + current.id, 0);
@@ -1076,46 +2942,75 @@ function createVideoReader(api, library, settings) {
     const columns = settings.columns(), rows = settings.rows(), active = settings.active();
     clearTimeout(resizeTimer);
     if (!active) {
-      untrack(pause);
+      untrack(() => {
+        pause();
+        releaseManaged();
+      });
       return;
     }
+    untrack(() => {
+      void restore().catch(showError);
+    });
     resizeTimer = setTimeout(() => {
       if (!api.lifecycle.signal.aborted) void player.resize(columns, rows);
     }, 150);
   });
-  function dispose() {
+  async function dispose() {
     ++token;
+    downloadAbort?.abort();
+    resourceWatcher.close();
+    clearTimeout(removalTimer);
     clearInterval(saveTimer);
     clearTimeout(resizeTimer);
     save();
     player.dispose();
+    await Promise.allSettled([...loads, downloadTask, video()?.release?.()]);
   }
+  void sources.cleanup().catch(showError);
   function View(props) {
     const Button = props.Button;
     return [(() => {
-      var _el$ = _$createElement("box"), _el$2 = _$createElement("text");
-      _$insertNode(_el$, _el$2);
+      var _el$ = _$createElement("box");
       _$setProp(_el$, "flexShrink", 0);
       _$insert(_el$, _$createComponent(Button, {
         get label() {
           return _$memo(() => !!busy())() ? "\u6B63\u5728\u6253\u5F00\u89C6\u9891\u2026" : video()?.title ?? "\u8BF7\u9009\u62E9\u672C\u5730\u89C6\u9891";
         },
         action: shelf
-      }), _el$2);
-      _$setProp(_el$2, "height", 1);
-      _$setProp(_el$2, "wrapMode", "none");
-      _$insert(_el$2, (() => {
-        var _c$ = _$memo(() => !!error());
-        return () => _c$() ? "\u64AD\u653E\u5F02\u5E38\uFF0C\u53EF\u91CD\u65B0\u6253\u5F00\u89C6\u9891" : _$memo(() => !!!video())() ? "\u50CF\u7D20\u98CE \xB7 \u9ED8\u8BA4\u9759\u97F3" : _$memo(() => !!state().loading)() ? "\u6B63\u5728\u89E3\u7801\u2026" : state().playing ? "\u64AD\u653E\u4E2D \xB7 \u50CF\u7D20\u98CE" : "\u5DF2\u6682\u505C \xB7 \u50CF\u7D20\u98CE";
-      })());
+      }), null);
+      _$insert(_el$, _$createComponent(Show, {
+        get when() {
+          return downloadProgress();
+        },
+        get fallback() {
+          return (() => {
+            var _el$7 = _$createElement("text");
+            _$setProp(_el$7, "height", 1);
+            _$setProp(_el$7, "wrapMode", "none");
+            _$insert(_el$7, (() => {
+              var _c$ = _$memo(() => !!error());
+              return () => _c$() ? "\u64AD\u653E\u5F02\u5E38\uFF0C\u53EF\u91CD\u65B0\u6253\u5F00\u89C6\u9891" : _$memo(() => !!!video())() ? "\u50CF\u7D20\u98CE \xB7 \u9ED8\u8BA4\u9759\u97F3" : _$memo(() => !!state().loading)() ? "\u6B63\u5728\u89E3\u7801\u2026" : state().playing ? "\u64AD\u653E\u4E2D \xB7 \u50CF\u7D20\u98CE" : "\u5DF2\u6682\u505C \xB7 \u50CF\u7D20\u98CE";
+            })());
+            return _el$7;
+          })();
+        },
+        get children() {
+          return _$createComponent(Button, {
+            get label() {
+              return `[\u53D6\u6D88] ${downloadProgress()}`;
+            },
+            action: () => downloadAbort?.abort()
+          });
+        }
+      }), null);
       _$effect((_$p) => _$setProp(_el$, "height", 2 + props.gap, _$p));
       return _el$;
     })(), (() => {
-      var _el$3 = _$createElement("box");
-      _$setProp(_el$3, "flexShrink", 0);
-      _$setProp(_el$3, "alignItems", "center");
-      _$setProp(_el$3, "justifyContent", "center");
-      _$insert(_el$3, _$createComponent(Show, {
+      var _el$2 = _$createElement("box");
+      _$setProp(_el$2, "flexShrink", 0);
+      _$setProp(_el$2, "alignItems", "center");
+      _$setProp(_el$2, "justifyContent", "center");
+      _$insert(_el$2, _$createComponent(Show, {
         get when() {
           return video();
         },
@@ -1127,10 +3022,10 @@ function createVideoReader(api, library, settings) {
           })();
         },
         get children() {
-          var _el$4 = _$createElement("text");
-          _$setProp(_el$4, "selectable", false);
-          _$setProp(_el$4, "wrapMode", "none");
-          _$insert(_el$4, _$createComponent(For, {
+          var _el$3 = _$createElement("text");
+          _$setProp(_el$3, "selectable", false);
+          _$setProp(_el$3, "wrapMode", "none");
+          _$insert(_el$3, _$createComponent(For, {
             get each() {
               return frame();
             },
@@ -1146,66 +3041,66 @@ function createVideoReader(api, library, settings) {
           }));
           _$effect((_p$) => {
             var _v$ = frameSize().width, _v$2 = frameSize().height;
-            _v$ !== _p$.e && (_p$.e = _$setProp(_el$4, "width", _v$, _p$.e));
-            _v$2 !== _p$.t && (_p$.t = _$setProp(_el$4, "height", _v$2, _p$.t));
+            _v$ !== _p$.e && (_p$.e = _$setProp(_el$3, "width", _v$, _p$.e));
+            _v$2 !== _p$.t && (_p$.t = _$setProp(_el$3, "height", _v$2, _p$.t));
             return _p$;
           }, {
             e: void 0,
             t: void 0
           });
-          return _el$4;
+          return _el$3;
         }
       }));
-      _$effect((_$p) => _$setProp(_el$3, "height", settings.rows(), _$p));
-      return _el$3;
+      _$effect((_$p) => _$setProp(_el$2, "height", settings.rows(), _$p));
+      return _el$2;
     })(), (() => {
-      var _el$5 = _$createElement("box"), _el$6 = _$createElement("box"), _el$7 = _$createElement("box");
-      _$insertNode(_el$5, _el$6);
-      _$insertNode(_el$5, _el$7);
-      _$setProp(_el$5, "flexShrink", 0);
-      _$insert(_el$5, _$createComponent(Button, {
+      var _el$4 = _$createElement("box"), _el$5 = _$createElement("box"), _el$6 = _$createElement("box");
+      _$insertNode(_el$4, _el$5);
+      _$insertNode(_el$4, _el$6);
+      _$setProp(_el$4, "flexShrink", 0);
+      _$insert(_el$4, _$createComponent(Button, {
         get label() {
           return `${mediaTime(state().position)} / ${mediaTime(video()?.duration)}`;
         },
         action: jump,
         muted: true
-      }), _el$6);
-      _$setProp(_el$6, "height", 1);
-      _$setProp(_el$6, "flexDirection", "row");
-      _$setProp(_el$6, "gap", 1);
-      _$insert(_el$6, _$createComponent(Button, {
+      }), _el$5);
+      _$setProp(_el$5, "height", 1);
+      _$setProp(_el$5, "flexDirection", "row");
+      _$setProp(_el$5, "gap", 1);
+      _$insert(_el$5, _$createComponent(Button, {
         get label() {
           return state().playing ? "[\u6682\u505C]" : "[\u64AD\u653E]";
         },
         action: play
       }), null);
-      _$insert(_el$6, _$createComponent(Button, {
+      _$insert(_el$5, _$createComponent(Button, {
         get label() {
           return state().muted ? "[\u5F00\u542F\u58F0\u97F3]" : "[\u9759\u97F3]";
         },
         action: mute
       }), null);
-      _$setProp(_el$7, "height", 1);
-      _$setProp(_el$7, "flexDirection", "row");
-      _$setProp(_el$7, "justifyContent", "space-between");
-      _$insert(_el$7, _$createComponent(Button, {
+      _$setProp(_el$6, "height", 1);
+      _$setProp(_el$6, "flexDirection", "row");
+      _$setProp(_el$6, "justifyContent", "space-between");
+      _$insert(_el$6, _$createComponent(Button, {
         label: "[\u540E\u900010\u79D2]",
         action: () => seek(-10)
       }), null);
-      _$insert(_el$7, _$createComponent(Button, {
+      _$insert(_el$6, _$createComponent(Button, {
         label: "[\u524D\u8FDB10\u79D2]",
         action: () => seek(10)
       }), null);
       _$effect((_p$) => {
         var _v$3 = 4 + props.gap, _v$4 = props.gap;
-        _v$3 !== _p$.e && (_p$.e = _$setProp(_el$5, "height", _v$3, _p$.e));
-        _v$4 !== _p$.t && (_p$.t = _$setProp(_el$5, "paddingTop", _v$4, _p$.t));
+        _v$3 !== _p$.e && (_p$.e = _$setProp(_el$4, "height", _v$3, _p$.e));
+        _v$4 !== _p$.t && (_p$.t = _$setProp(_el$4, "paddingTop", _v$4, _p$.t));
         return _p$;
       }, {
         e: void 0,
         t: void 0
       });
-      return _el$5;
+      return _el$4;
     })()];
   }
   return {
@@ -1222,7 +3117,7 @@ function createVideoReader(api, library, settings) {
 
 // src/ui/index.tsx
 var prefix2 = "opencode-moyu:";
-var pluginRoot = resolve3(dirname3(fileURLToPath(import.meta.url)), "..");
+var pluginRoot = resolve3(dirname4(fileURLToPath(import.meta.url)), "..");
 var tui = async (api, options) => {
   const configuredRows = Number(options?.rows);
   const fixedRows = Number.isInteger(configuredRows) && configuredRows >= 4 ? Math.min(configuredRows, 40) : void 0;
@@ -1293,7 +3188,7 @@ var tui = async (api, options) => {
     api.kv.set(prefix2 + "mode", next);
     if (next === "video") void video.restore().catch((error) => toast(String(error), "error"));
   }
-  async function open2(path, quiet = false) {
+  async function open3(path, quiet = false) {
     const token = ++request;
     setBusy(true);
     try {
@@ -1343,7 +3238,7 @@ var tui = async (api, options) => {
       onCancel: closeDialog,
       onConfirm: (path) => {
         closeDialog();
-        void open2(path);
+        void open3(path);
       }
     }));
   }
@@ -1385,7 +3280,7 @@ var tui = async (api, options) => {
         onSelect: (item) => {
           closeDialog();
           if (item.value === "moyu:collect") promptCollection();
-          else if (item.value) void open2(String(item.value));
+          else if (item.value) void open3(String(item.value));
           else promptFile();
         }
       }));
@@ -1539,13 +3434,13 @@ var tui = async (api, options) => {
     setWidth(nextWidth);
   };
   let refresh;
-  const watcher = watch(booksDir, (_event, filename) => {
+  const watcher = watch2(booksDir, (_event, filename) => {
     const current = book();
     if (!current || filename?.toString() !== basename3(current.path)) return;
     clearTimeout(refresh);
     refresh = setTimeout(() => {
       if (api.lifecycle.signal.aborted || book()?.path !== current.path) return;
-      void access2(current.path).then(() => open2(current.path, true)).catch((error) => {
+      void access4(current.path).then(() => open3(current.path, true)).catch((error) => {
         if (error.code !== "ENOENT" || api.lifecycle.signal.aborted || book()?.path !== current.path) return;
         setBook(void 0);
         setOffset(0);
@@ -1585,9 +3480,10 @@ var tui = async (api, options) => {
     watcher.close();
     clearTimeout(refresh);
     save();
-    video.dispose();
+    const disposing = video.dispose();
     api.renderer.off("resize", resize);
     if (ownsDialog) closeDialog();
+    return disposing;
   });
   createEffect2(() => {
     if (!api.kv.ready || started) return;
@@ -1599,7 +3495,7 @@ var tui = async (api, options) => {
     setVisible(api.kv.get(prefix2 + "visible", true));
     if (api.kv.get(prefix2 + "mode", "novel") === "video") selectMode("video");
     const initial = typeof options?.file === "string" ? options.file : api.kv.get(prefix2 + "last", "");
-    void open2(initial || resolve3(pluginRoot, "books/\u591C\u73ED\u4FBF\u5229\u5E97.txt"), true);
+    void open3(initial || resolve3(pluginRoot, "books/\u591C\u73ED\u4FBF\u5229\u5E97.txt"), true);
   });
   api.keymap.registerLayer({
     commands: [{

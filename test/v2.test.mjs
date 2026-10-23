@@ -28,9 +28,14 @@ test("2.x 模型工具保留参数校验、服务执行及权限拒绝", async (
   try {
     assert.ok(hooks.has("context"))
     assert.ok(hooks.has("compaction"))
-    assert.deepEqual([...tools.keys()].sort(), ["moyu_catalog", "moyu_delete", "moyu_import", "moyu_library", "moyu_search", "moyu_sources"])
+    assert.deepEqual([...tools.keys()].sort(), ["moyu_catalog", "moyu_delete", "moyu_import", "moyu_library", "moyu_search", "moyu_sources", "moyu_video_import", "moyu_video_info", "moyu_video_search"])
     const sources = JSON.parse((await tools.get("moyu_sources").execute({}, context)).content)
     assert.equal(sources[0].id, "html-novel")
+    assert.ok(sources.some((item) => item.id === "youtube"))
+    for (const [name, input] of [["moyu_video_search", { platform: "youtube", query: "demo", limit: 1 }], ["moyu_video_info", { url: "https://youtu.be/BaW_jenozKc" }], ["moyu_video_import", { url: "BV1xx411c7mD" }]]) {
+      await assert.rejects(tools.get(name).execute(input, context), /test-permission-denied/)
+    }
+    requests.length = 0
     const shelf = JSON.parse((await tools.get("moyu_library").execute({}, context)).content)
     assert.deepEqual(shelf.resources, [])
     const schema = tools.get("moyu_import").input["~standard"]

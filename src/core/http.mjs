@@ -26,10 +26,11 @@ export function httpUrl(input) {
 }
 
 /** DNS is checked and pinned for each request, including redirects. */
-export function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, timeoutMs = 15000, useProxy = true } = {}) {
-  return async function readPage(input, { signal } = {}) {
+export function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, timeoutMs = 15000, useProxy = true, maxRedirects = 4 } = {}) {
+  return async function readPage(input, { signal, headers = {} } = {}) {
     let url = httpUrl(input)
-    for (let redirects = 0; redirects <= 4; redirects++) {
+    const initialOrigin = url.origin
+    for (let redirects = 0; redirects <= maxRedirects; redirects++) {
       signal?.throwIfAborted()
       const hostname = url.hostname.replace(/^\[|\]$/g, "")
       const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await lookup(hostname, { all: true })
@@ -49,7 +50,7 @@ export function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate" },
+          headers: { "User-Agent": "OpenCode-Moyu/0.3 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...(url.origin === initialOrigin ? headers : {}) },
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0

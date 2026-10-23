@@ -4,7 +4,7 @@
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.2.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.3.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -42,14 +42,32 @@ bash install.sh
 
 ## 像素视频
 
-点击顶部「视频」→「视频库」→「打开本地视频」，输入 MP4、MKV、WebM、MOV、AVI、M4V、MPEG 或 GIF 路径；也可输入 `/video` 打开视频库。首版播放本地文件，网络视频下载、网页视频和直播尚未接入。
+点击顶部「视频」→「视频库」→「打开本地视频」，输入 MP4、MKV、WebM、MOV、AVI、M4V、MPEG 或 GIF 路径；也可输入 `/video` 打开视频库。在线视频支持 B 站及 YouTube 的单个公开视频；直播和整套播放列表尚未接入。
 
 - 视频按当前区域缩放为彩色像素画面，保留比例；默认 10 帧 / 秒，用终端半格字符显示，无需浏览器或外部画面窗口。
 - 打开及重启后均暂停、静音，点击「播放」开始；点击「开启声音」才播放音轨，「静音」立即停止声音。无音轨或音频后端不可用时明确提示。
 - 支持前后 10 秒、点击时间输入秒数或 `分:秒` 跳转，以及共享的宽高调整。切回小说、隐藏或离开面板时暂停画面和声音，小说与视频分别保存进度。
-- 视频库保存加密的文件路径、标题及媒体信息，播放进度保存到插件存储。**原视频直接从原位置读取，不复制、不加密原视频**；像素帧只在内存流转。顶部「删除」移除视频库记录与进度，保留原文件。
+- 视频库保存加密的文件路径、标题及媒体信息，播放进度保存到插件存储。**本地导入的视频直接读取原文件，不复制、不加密原文件**；平台下载的视频则加密保存。顶部「删除」移除记录、进度及平台下载缓存，保留本地导入的原文件。
 
 视频需要 [FFmpeg](https://ffmpeg.org/download.html) 的 `ffmpeg`、`ffprobe`，开声还需要 `ffplay` 和可用的系统音频设备。插件会查找 PATH、用户私有目录 `~/.local/share/opencode-moyu/media/bin` 及现有 Conda 环境；小说功能不依赖这些程序。也可用 `MOYU_MEDIA_BIN` 指定目录，或分别设置 `MOYU_FFMPEG`、`MOYU_FFPROBE`、`MOYU_FFPLAY`。安装包仅包含插件，不附带 FFmpeg 二进制；可使用发行版提供的 FFmpeg 包，Windows 可将官方页面链接的构建解压后把 bin 加入 PATH。WSL 可复用 Linux 解码器和 Windows `ffplay.exe`，插件会转换文件路径。
+
+## B 站 / YouTube 来源
+
+在「视频库」选择「B 站 / YouTube 视频链接」，粘贴完整视频链接或 BV 号；也可选「搜索在线视频」，选择平台、输入关键词，再点击结果下载。单次下载一个视频，最高 480p、最长 60 分钟、成品不超过 256 MiB；下载行可点击取消。相同规范化 URL 已入库时复用缓存。
+
+B 站公开搜索及视频信息无需 API Key，接口有访问限制时显示实际错误。YouTube 搜索和视频信息使用 [YouTube Data API v3](https://developers.google.com/youtube/v3/docs/search/list)，填写方式：
+
+1. 在 [Google Cloud](https://console.cloud.google.com/apis/library/youtube.googleapis.com) 启用 YouTube Data API v3，并在凭据中创建 API Key。
+2. 打开「视频库」→「视频来源设置」→「填写 YouTube API Key」，粘贴并保存。
+3. 返回「搜索在线视频」选择 YouTube。已有密钥可更新或移除；也支持 `YOUTUBE_API_KEY` 环境变量，本地保存的密钥优先。
+
+密钥保存在 `.moyu/settings/youtube.enc`，沿用资料库 AES-256-GCM 加密；不写项目配置、聊天记录或模型工具参数。输入时只在设置对话框中填写，保存后界面只显示「已配置」，不会回显。Google 请求使用密钥请求头，不把密钥放入 URL；密钥状态表示已保存，不代表已通过远端验证。
+
+视频媒体由 [yt-dlp](https://github.com/yt-dlp/yt-dlp#installation) 通过 HTTP 获取。API Key 只用于数据查询，不能提供下载权限或解除登录、人机验证、地区等限制；遇到这些限制停止并报出原因。下载不启动浏览器、不读取浏览器 Cookie、不使用用户登录；YouTube 解析可使用 Node.js 运行时。需要官方 yt-dlp（优先放在 `~/.local/share/opencode-moyu/media/bin`，也可在 PATH 或由 `MOYU_YTDLP` 指定），安装包不附带下载器。
+
+下载先写私有临时目录，成功后流式加密为 `.moyu/media/<资源ID>.moyuvid` 并清理下载临时文件。播放时在权限受限的临时目录解密，切回小说、隐藏、删除或正常退出后清理；异常退出遗留的临时文件在下次插件启动时按进程状态清理。原始视频和帧不会进入模型上下文或项目仓库。
+
+当前模型可调用 `moyu_video_search`、`moyu_video_info` 和 `moyu_video_import`。例如在普通对话中说「把这个 B 站链接下载到 Moyu 视频库」，完成后用 `/video` 选择播放；视频任务使用独立工具，`/moyu 书名` 仍用于小说采集。下载时保存来源、标题、实际时长及画面信息，数据接口可用时一并保存作者、简介和播放量。
 
 ## 调整阅读区域大小
 
@@ -143,7 +161,7 @@ bash install.sh --dry-run
 
 ## 开发与验证
 
-架构与来源接入说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。当前内置小说来源和阅读器；资源契约已预留视频、音频、图片及数据集类型。
+架构与来源接入说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。当前内置小说来源、阅读器、B 站 / YouTube 视频来源及像素播放器；资源契约另预留音频、图片及数据集类型。
 
 ```bash
 npm ci --ignore-scripts

@@ -244,8 +244,8 @@ var require_common = __commonJS({
         }
         return debug;
       }
-      function extend2(namespace, delimiter) {
-        const newDebug = createDebug(this.namespace + (typeof delimiter === "undefined" ? ":" : delimiter) + namespace);
+      function extend2(namespace, delimiter3) {
+        const newDebug = createDebug(this.namespace + (typeof delimiter3 === "undefined" ? ":" : delimiter3) + namespace);
         newDebug.log = this.log;
         return newDebug;
       }
@@ -13595,7 +13595,7 @@ function tool(input) {
 tool.schema = external_exports;
 
 // src/server/index.ts
-import { dirname as dirname2, resolve as resolve3 } from "node:path";
+import { dirname as dirname3, resolve as resolve3 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/services/ingestion.mjs
@@ -13741,7 +13741,7 @@ var LibraryStore = class {
   async deleteResource(id) {
     if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("\u65E0\u6548\u8D44\u6599 ID");
     return this.withJobLock(id, async () => {
-      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc")]) {
+      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc"), join(this.internal, "media", id + ".moyuvid")]) {
         await unlink(path).catch((error45) => {
           if (error45.code !== "ENOENT") throw error45;
         });
@@ -13825,10 +13825,11 @@ function httpUrl2(input) {
   url2.hash = "";
   return url2;
 }
-function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, timeoutMs = 15e3, useProxy = true } = {}) {
-  return async function readPage(input, { signal } = {}) {
+function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, timeoutMs = 15e3, useProxy = true, maxRedirects = 4 } = {}) {
+  return async function readPage(input, { signal, headers = {} } = {}) {
     let url2 = httpUrl2(input);
-    for (let redirects = 0; redirects <= 4; redirects++) {
+    const initialOrigin = url2.origin;
+    for (let redirects = 0; redirects <= maxRedirects; redirects++) {
       signal?.throwIfAborted();
       const hostname3 = url2.hostname.replace(/^\[|\]$/g, "");
       const addresses = isIP(hostname3) ? [{ address: hostname3, family: isIP(hostname3) }] : await lookup(hostname3, { all: true });
@@ -13848,7 +13849,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate" }
+          headers: { "User-Agent": "OpenCode-Moyu/0.3 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -20553,14 +20554,462 @@ function createIngestion({ directory, keyFile, registry: registry2 = createSourc
   return { registry: registry2, store, catalog, importBatch };
 }
 
+// src/services/video-ingestion.mjs
+import { spawn as spawn2, execFile as execFile2 } from "node:child_process";
+import { access as access2, mkdir as mkdir5, mkdtemp, readdir as readdir5, stat as stat4, rm as rm3 } from "node:fs/promises";
+import { join as join5, delimiter as delimiter2, dirname as dirname2, extname as extname3 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { constants as constants2 } from "node:fs";
+import { promisify as promisify2 } from "node:util";
+
+// src/media/settings.mjs
+import { readFile as readFile4, unlink as unlink2, mkdir as mkdir3 } from "node:fs/promises";
+import { join as join2 } from "node:path";
+var MediaSettings = class {
+  constructor(library) {
+    this.library = library;
+    this.path = join2(library.internal, "settings", "youtube.enc");
+  }
+  async key() {
+    try {
+      return (await this.library.vault.unseal(await readFile4(this.path))).apiKey || "";
+    } catch (error45) {
+      if (error45.code !== "ENOENT") throw error45;
+    }
+    return process.env.YOUTUBE_API_KEY || "";
+  }
+  async status() {
+    return { youtubeApiKeyConfigured: Boolean(await this.key()) };
+  }
+  async saveKey(input) {
+    const apiKey = input.trim();
+    if (!/^[A-Za-z0-9_-]{20,200}$/.test(apiKey)) throw new Error("API Key \u683C\u5F0F\u4E0D\u6B63\u786E\uFF0C\u8BF7\u7C98\u8D34\u5B8C\u6574\u5BC6\u94A5");
+    await mkdir3(join2(this.library.internal, "settings"), { recursive: true, mode: 448 });
+    await atomicWrite(this.path, await this.library.vault.seal({ apiKey }));
+    return this.status();
+  }
+  async removeKey() {
+    await unlink2(this.path).catch((error45) => {
+      if (error45.code !== "ENOENT") throw error45;
+    });
+    return this.status();
+  }
+};
+
+// src/media/cache.mjs
+import { createCipheriv as createCipheriv2, createDecipheriv as createDecipheriv2, randomBytes as randomBytes2, randomUUID as randomUUID2 } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir as mkdir4, open as open2, readdir as readdir4, writeFile as writeFile3, rename as rename2, rm as rm2, stat as stat3 } from "node:fs/promises";
+import { join as join4 } from "node:path";
+import { pipeline } from "node:stream/promises";
+
+// src/media/runtime.mjs
+import { spawn, execFile } from "node:child_process";
+import { access, readdir as readdir3, realpath as realpath2, stat as stat2 } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join as join3, delimiter, extname as extname2, basename as basename2 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { promisify } from "node:util";
+var execute = promisify(execFile);
+var binaries = /* @__PURE__ */ new Map();
+async function mediaBinary(name) {
+  if (binaries.has(name)) return binaries.get(name);
+  const custom2 = process.env["MOYU_" + name.toUpperCase()];
+  const dirs = [process.env.MOYU_MEDIA_BIN, join3(homedir2(), ".local/share/opencode-moyu/media/bin"), ...(process.env.PATH || "").split(delimiter)].filter(Boolean);
+  for (const root3 of ["miniconda3", "miniforge3", "anaconda3"]) {
+    const base = join3(homedir2(), root3);
+    dirs.push(join3(base, "bin"));
+    for (const env of (await readdir3(join3(base, "envs")).catch(() => [])).slice(0, 32)) dirs.push(join3(base, "envs", env, "bin"));
+  }
+  const candidates = custom2 ? [custom2] : dirs.flatMap((dir) => process.platform === "win32" ? [join3(dir, name + ".exe")] : [join3(dir, name), join3(dir, name + ".exe")]);
+  for (const path of candidates) {
+    try {
+      await access(path, constants.X_OK);
+      await execute(path, ["-version"], { timeout: 5e3, maxBuffer: 32768, windowsHide: true });
+      binaries.set(name, path);
+      return path;
+    } catch {
+    }
+  }
+  throw new Error(`\u672A\u627E\u5230 ${name}\u3002\u8BF7\u5B89\u88C5 FFmpeg\uFF08\u542B ffprobe / ffplay\uFF09\uFF0C\u6216\u8BBE\u7F6E MOYU_MEDIA_BIN \u6307\u5411\u5176 bin \u76EE\u5F55\u3002`);
+}
+async function nativeMediaPath(binary, path) {
+  if (process.platform !== "win32" && binary.toLowerCase().endsWith(".exe")) return (await execute("wslpath", ["-w", path], { timeout: 5e3 })).stdout.trim();
+  return path;
+}
+async function inspectVideo(input, cwd) {
+  if (/^[a-z]+:\/\//i.test(input.trim())) throw new Error("\u9996\u7248\u652F\u6301\u672C\u5730\u89C6\u9891\uFF0C\u8BF7\u8F93\u5165\u6587\u4EF6\u8DEF\u5F84");
+  const path = await realpath2(expandPath(input, cwd));
+  const info = await stat2(path);
+  if (!info.isFile() || !/\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/i.test(path)) throw new Error("\u8BF7\u9009\u62E9 MP4\u3001MKV\u3001WebM\u3001MOV\u3001AVI \u6216 GIF \u89C6\u9891\u6587\u4EF6");
+  const binary = await mediaBinary("ffprobe");
+  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true });
+  const data2 = JSON.parse(stdout), video = data2.streams?.find((stream) => stream.codec_type === "video");
+  if (!video?.width || !video.height) throw new Error("\u6587\u4EF6\u6CA1\u6709\u53EF\u64AD\u653E\u7684\u89C6\u9891\u8F68\u9053");
+  const duration3 = Number(data2.format?.duration);
+  if (!Number.isFinite(duration3) || duration3 <= 0) throw new Error("\u6682\u4E0D\u652F\u6301\u65E0\u6CD5\u786E\u5B9A\u65F6\u957F\u7684\u89C6\u9891");
+  const sar = String(video.sample_aspect_ratio || "1:1").split(":").map(Number);
+  let width = video.width * (sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1), height = video.height;
+  const rotation = Number(video.side_data_list?.find((item) => item.rotation !== void 0)?.rotation ?? video.tags?.rotate ?? 0);
+  if (Math.abs(rotation) % 180 === 90) [width, height] = [height, width];
+  return { path, title: basename2(path, extname2(path)), width, height, duration: duration3, hasAudio: data2.streams.some((stream) => stream.codec_type === "audio") };
+}
+
+// src/sources/local-video.mjs
+async function resolveLocalVideo(resource) {
+  if (resource.kind !== "video" || resource.source.adapter !== "local-video") throw new Error("\u6682\u4E0D\u652F\u6301\u8FD9\u4E2A\u89C6\u9891\u6765\u6E90");
+  const path = resource.assets.find((asset) => asset.role === "media")?.path;
+  if (!path) throw new Error("\u89C6\u9891\u8BB0\u5F55\u6CA1\u6709\u672C\u5730\u6587\u4EF6\u8DEF\u5F84");
+  return { ...await inspectVideo(path), id: resource.id, title: resource.title };
+}
+
+// src/media/cache.mjs
+var magic2 = Buffer.from("MOYUVID1");
+var aad2 = Buffer.from("opencode-moyu:video:v1");
+var MAX_VIDEO_BYTES = 256 * 1024 * 1024;
+var MediaCache = class {
+  constructor(library) {
+    this.library = library;
+    this.directory = join4(library.internal, "media");
+    this.playback = join4(library.internal, "playback");
+  }
+  path(id) {
+    if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("\u65E0\u6548\u89C6\u9891 ID");
+    return join4(this.directory, id + ".moyuvid");
+  }
+  async seal(id, source) {
+    const size = (await stat3(source)).size;
+    if (size > MAX_VIDEO_BYTES) throw new Error("\u89C6\u9891\u8D85\u8FC7 256 MiB \u9650\u5236");
+    await mkdir4(this.directory, { recursive: true, mode: 448 });
+    const target = this.path(id), temporary = target + "." + randomUUID2() + ".tmp";
+    const nonce = randomBytes2(12), cipher = createCipheriv2("aes-256-gcm", await this.library.vault.key(), nonce);
+    cipher.setAAD(aad2);
+    try {
+      await writeFile3(temporary, Buffer.concat([magic2, nonce, Buffer.alloc(16)]), { flag: "wx", mode: 384 });
+      await pipeline(createReadStream(source), cipher, createWriteStream(temporary, { flags: "a" }));
+      const file2 = await open2(temporary, "r+");
+      try {
+        await file2.write(cipher.getAuthTag(), 0, 16, 20);
+      } finally {
+        await file2.close();
+      }
+      await rename2(temporary, target);
+      return target;
+    } finally {
+      await rm2(temporary, { force: true });
+    }
+  }
+  async removeStalePlayback() {
+    await mkdir4(this.playback, { recursive: true, mode: 448 });
+    for (const entry of await readdir4(this.playback, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+-[a-f0-9-]{36}$/.test(entry.name)) continue;
+      const pid = Number(entry.name.split("-")[0]);
+      try {
+        process.kill(pid, 0);
+      } catch (error45) {
+        if (error45.code === "ESRCH") await rm2(join4(this.playback, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+  async open(resource) {
+    if (resource.source.adapter === "local-video") return resolveLocalVideo(resource);
+    if (resource.kind !== "video" || !resource.metadata.managedMedia) throw new Error("\u89C6\u9891\u5C1A\u672A\u4E0B\u8F7D\uFF0C\u8BF7\u5148\u4ECE\u6765\u6E90\u5BFC\u5165");
+    const path = this.path(resource.id), info = await stat3(path);
+    if (info.size > MAX_VIDEO_BYTES + 36 || info.size < 36) throw new Error("\u89C6\u9891\u7F13\u5B58\u5927\u5C0F\u5F02\u5E38");
+    const file2 = await open2(path, "r"), header = Buffer.alloc(36);
+    try {
+      await file2.read(header, 0, 36, 0);
+    } finally {
+      await file2.close();
+    }
+    if (!header.subarray(0, 8).equals(magic2)) throw new Error("\u89C6\u9891\u7F13\u5B58\u683C\u5F0F\u4E0D\u652F\u6301");
+    await this.removeStalePlayback();
+    const temporary = join4(this.playback, process.pid + "-" + randomUUID2());
+    await mkdir4(temporary, { mode: 448 });
+    const extension = /^\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/.test(resource.metadata.extension || "") ? resource.metadata.extension : ".mp4";
+    const decoded = join4(temporary, "video" + extension);
+    const release = () => rm2(temporary, { recursive: true, force: true, maxRetries: 4, retryDelay: 200 });
+    try {
+      const decipher = createDecipheriv2("aes-256-gcm", await this.library.vault.key(false), header.subarray(8, 20));
+      decipher.setAAD(aad2);
+      decipher.setAuthTag(header.subarray(20, 36));
+      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }));
+      return { ...await inspectVideo(decoded), id: resource.id, title: resource.title, release };
+    } catch {
+      await release();
+      throw new Error("\u89C6\u9891\u7F13\u5B58\u65E0\u6CD5\u89E3\u5BC6\u6216\u64AD\u653E\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u53CA\u6587\u4EF6\u5B8C\u6574\u6027\u540E\u91CD\u65B0\u4E0B\u8F7D");
+    }
+  }
+};
+
+// src/sources/video-platforms.mjs
+var short = (value, max = 180) => cleanText(String(value ?? "").replace(/<[^>]*>/g, "")).slice(0, max);
+function videoUrl(input) {
+  const value = input.trim();
+  if (/^BV[\da-zA-Z]{10}$/.test(value)) return { platform: "bilibili", id: value, url: `https://www.bilibili.com/video/${value}/` };
+  if (/^[\w-]{11}$/.test(value)) return { platform: "youtube", id: value, url: `https://www.youtube.com/watch?v=${value}` };
+  let url2;
+  try {
+    url2 = new URL(value);
+  } catch {
+    throw new Error("\u8BF7\u8F93\u5165 B \u7AD9 BV \u53F7\u6216\u5B8C\u6574\u89C6\u9891\u94FE\u63A5 / YouTube \u89C6\u9891\u94FE\u63A5");
+  }
+  if (!["http:", "https:"].includes(url2.protocol) || url2.username || url2.password || url2.port) throw new Error("\u89C6\u9891\u94FE\u63A5\u683C\u5F0F\u4E0D\u652F\u6301");
+  const host = url2.hostname.toLowerCase();
+  if (["www.bilibili.com", "bilibili.com", "m.bilibili.com"].includes(host)) {
+    const id = url2.pathname.match(/^\/video\/(BV[\da-zA-Z]{10}|av\d+)(?:\/|$)/)?.[1];
+    if (id) {
+      const page = Math.max(1, Math.min(1e3, Number(url2.searchParams.get("p")) || 1));
+      return { platform: "bilibili", id, page, url: `https://www.bilibili.com/video/${id}/${page > 1 ? "?p=" + Math.floor(page) : ""}` };
+    }
+  }
+  if (["www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be"].includes(host)) {
+    const id = host === "youtu.be" ? url2.pathname.slice(1) : url2.pathname === "/watch" ? url2.searchParams.get("v") : url2.pathname.match(/^\/(?:shorts|embed)\/([^/]+)/)?.[1];
+    if (id && /^[\w-]{11}$/.test(id)) return { platform: "youtube", id, url: `https://www.youtube.com/watch?v=${id}` };
+  }
+  throw new Error("\u4EC5\u652F\u6301 B \u7AD9\u5355\u4E2A\u89C6\u9891\u548C YouTube \u5355\u4E2A\u89C6\u9891\u94FE\u63A5\uFF1B\u77ED\u94FE\u63A5\u8BF7\u5148\u590D\u5236\u5B8C\u6574\u5730\u5740");
+}
+function createVideoPlatforms({ settings, read = createHttpClient({ maxBytes: 1024 * 1024, maxRedirects: 0 }) }) {
+  async function youtube(path, params, signal) {
+    const key = await settings.key();
+    if (!key) throw new Error("\u8BF7\u5148\u5728\u300C\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u300D\u586B\u5199 YouTube API Key");
+    const url2 = new URL("https://www.googleapis.com/youtube/v3/" + path);
+    for (const [name, value] of Object.entries(params)) url2.searchParams.set(name, String(value));
+    try {
+      const result = await read(url2.href, { signal, headers: { Accept: "application/json", "X-Goog-Api-Key": key } });
+      const data2 = JSON.parse(result.text);
+      if (data2.error) throw new Error("API_ERROR");
+      return data2;
+    } catch (error45) {
+      if (signal?.aborted) throw error45;
+      const code = String(error45).match(/HTTP\s+(\d{3})/)?.[1];
+      throw new Error(`YouTube API \u8BF7\u6C42\u5931\u8D25${code ? "\uFF08HTTP " + code + "\uFF09" : ""}\uFF0C\u8BF7\u68C0\u67E5 API Key\u3001YouTube Data API v3 \u662F\u5426\u542F\u7528\u3001\u914D\u989D\u548C\u7F51\u7EDC\u3002`);
+    }
+  }
+  async function bili(path, params, signal) {
+    const url2 = new URL("https://api.bilibili.com" + path);
+    for (const [name, value] of Object.entries(params)) url2.searchParams.set(name, String(value));
+    const result = await read(url2.href, { signal, headers: { Accept: "application/json", Referer: "https://www.bilibili.com/" } });
+    const data2 = JSON.parse(result.text);
+    if (data2.code !== 0) throw new Error(`B \u7AD9\u63A5\u53E3\u8FD4\u56DE ${Number(data2.code)}\uFF0C\u5F53\u524D\u6765\u6E90\u4E0D\u53EF\u7528\uFF1B\u8BF7\u68C0\u67E5\u94FE\u63A5\u6216\u7A0D\u540E\u91CD\u8BD5`);
+    return data2.data;
+  }
+  async function search({ platform, query, limit = 5, signal }) {
+    query = String(query).trim().slice(0, 200);
+    if (!query) throw new Error("\u8BF7\u8F93\u5165\u89C6\u9891\u5173\u952E\u8BCD");
+    limit = Math.max(1, Math.min(5, Math.floor(Number(limit) || 5)));
+    if (platform === "youtube") {
+      const data3 = await youtube("search", { part: "snippet", type: "video", q: query, maxResults: limit, fields: "items(id/videoId,snippet(title,channelTitle,description))" }, signal);
+      return (data3.items || []).filter((item) => /^[\w-]{11}$/.test(item.id?.videoId)).map((item) => ({ platform, id: item.id.videoId, url: `https://www.youtube.com/watch?v=${item.id.videoId}`, title: short(item.snippet.title), author: short(item.snippet.channelTitle, 80), description: short(item.snippet.description, 200) })).slice(0, limit);
+    }
+    if (platform !== "bilibili") throw new Error("\u672A\u77E5\u89C6\u9891\u6765\u6E90");
+    const data2 = await bili("/x/web-interface/search/type", { search_type: "video", keyword: query, page: 1, page_size: limit }, signal);
+    return (data2.result || []).filter((item) => /^BV[\da-zA-Z]{10}$/.test(item.bvid)).slice(0, limit).map((item) => ({ platform, id: item.bvid, url: `https://www.bilibili.com/video/${item.bvid}/`, title: short(item.title), author: short(item.author, 80), description: short(item.description, 200), duration: short(item.duration, 20) }));
+  }
+  async function info(input, { signal } = {}) {
+    const target = videoUrl(input);
+    if (target.platform === "youtube") {
+      const data3 = await youtube("videos", { part: "snippet,contentDetails,statistics", id: target.id, fields: "items(id,snippet(title,channelTitle,description),contentDetails/duration,statistics/viewCount)" }, signal);
+      const item = data3.items?.[0];
+      if (!item) throw new Error("YouTube \u672A\u8FD4\u56DE\u8FD9\u4E2A\u89C6\u9891\uFF0C\u53EF\u80FD\u5DF2\u5220\u9664\u3001\u975E\u516C\u5F00\u6216\u4E0D\u53EF\u8BBF\u95EE");
+      return { ...target, title: short(item.snippet.title), author: short(item.snippet.channelTitle, 80), description: short(item.snippet.description, 600), duration: short(item.contentDetails?.duration, 40), views: Number(item.statistics?.viewCount) || 0 };
+    }
+    const data2 = await bili("/x/web-interface/view", target.id.startsWith("av") ? { aid: target.id.slice(2) } : { bvid: target.id }, signal);
+    return { ...target, title: short(data2.title), author: short(data2.owner?.name, 80), description: short(data2.desc, 600), duration: Number(data2.duration) || 0, views: Number(data2.stat?.view) || 0 };
+  }
+  return { search, info, list: () => [{ id: "bilibili", name: "\u54D4\u54E9\u54D4\u54E9", search: true, apiKey: false }, { id: "youtube", name: "YouTube", search: true, apiKey: true }] };
+}
+
+// src/services/video-ingestion.mjs
+var execute2 = promisify2(execFile2);
+async function downloaderBinary() {
+  const paths = process.env.MOYU_YTDLP ? [process.env.MOYU_YTDLP] : [
+    join5(homedir3(), ".local/share/opencode-moyu/media/bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
+    ...String(process.env.PATH || "").split(delimiter2).map((dir) => join5(dir, process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"))
+  ];
+  for (const path of paths) {
+    try {
+      await access2(path, constants2.X_OK);
+      await execute2(path, ["--version"], { timeout: 5e3, maxBuffer: 1024, windowsHide: true });
+      return path;
+    } catch {
+    }
+  }
+  throw new Error("\u672A\u627E\u5230 yt-dlp\uFF0C\u8BF7\u5B89\u88C5\u5B98\u65B9 yt-dlp\uFF0C\u6216\u7528 MOYU_YTDLP \u6307\u5B9A\u8DEF\u5F84");
+}
+function safeError(message) {
+  return cleanText(String(message)).replace(/https?:\/\/\S+/g, "[\u6765\u6E90\u5730\u5740]").slice(-600);
+}
+function downloadFailure(message, platform) {
+  if (/sign in to confirm|not a bot|captcha|human.verification|verify.you.are.human/i.test(message)) return `${platform === "youtube" ? "YouTube" : "\u89C6\u9891\u6765\u6E90"} \u8981\u6C42\u767B\u5F55\u6216\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D\u3002API Key \u4EC5\u7528\u4E8E\u6570\u636E\u67E5\u8BE2\uFF0C\u4E0D\u80FD\u89E3\u9664\u89C6\u9891\u8BBF\u95EE\u9650\u5236\u3002`;
+  if (/private video|members.only|premium|age.restricted|login required|sign in/i.test(message)) return "\u89C6\u9891\u9700\u8981\u8D26\u6237\u6216\u989D\u5916\u8BBF\u95EE\u6743\u9650\uFF0C\u5DF2\u505C\u6B62\u4E0B\u8F7D";
+  if (/video is unavailable|video unavailable|removed|does not exist/i.test(message)) return "\u89C6\u9891\u4E0D\u53EF\u7528\u3001\u5DF2\u5220\u9664\u6216\u5F53\u524D\u7F51\u7EDC\u65E0\u6CD5\u8BBF\u95EE\uFF0C\u672A\u5165\u5E93";
+  return "\u89C6\u9891\u6765\u6E90\u83B7\u53D6\u5931\u8D25\uFF1A" + safeError(message);
+}
+async function downloadVideo(url2, directory, { signal, onProgress = (_value) => {
+}, binary = downloaderBinary, launch = spawn2 } = {}) {
+  const target = videoUrl(url2);
+  signal?.throwIfAborted();
+  const executable = await binary(), ffmpeg = await mediaBinary("ffmpeg");
+  signal?.throwIfAborted();
+  const args = ["--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-playlist", "--playlist-items", "1", "--no-remote-components", "--js-runtimes", "node", "--socket-timeout", "15", "--retries", "0", "--extractor-retries", "0", "--fragment-retries", "0", "--abort-on-unavailable-fragments", "--concurrent-fragments", "1", "--match-filters", "!is_live & duration <= 3600", "--max-filesize", String(MAX_VIDEO_BYTES), "--format", "bv*[height<=480]+ba/b[height<=480]", "--merge-output-format", "mp4/mkv", "--ffmpeg-location", dirname2(ffmpeg), "--no-mtime", "--newline", "--progress", "--progress-template", "download:MOYU_PROGRESS:%(progress._percent_str)s", "--print", "before_dl:MOYU_META:%(title)j", "--no-simulate", "--paths", directory, "--output", "video.%(ext)s", "--", target.url];
+  return new Promise((resolve4, reject) => {
+    const child = launch(executable, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
+    let stderr = "", partial2 = "", title = "", failure, finished = false;
+    const terminate = (error45) => {
+      if (finished || failure) return;
+      failure = error45;
+      try {
+        if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+        else spawn2("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }).once("error", () => child.kill());
+      } catch {
+      }
+      const timer = setTimeout(() => {
+        try {
+          if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+          else child.kill("SIGKILL");
+        } catch {
+        }
+      }, 1500);
+      timer.unref?.();
+      child.once("close", () => clearTimeout(timer));
+    };
+    const abort = () => terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u5DF2\u53D6\u6D88"));
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    child.stdout.on("data", (chunk) => {
+      partial2 += chunk.toString();
+      if (partial2.length > 8192) partial2 = partial2.slice(-8192);
+      const lines = partial2.split(/\r?\n/);
+      partial2 = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("MOYU_META:")) {
+          try {
+            title = cleanText(JSON.parse(line.slice(10))).slice(0, 180);
+          } catch {
+          }
+        }
+        const match = line.match(/MOYU_PROGRESS:\s*([\d.]+)%/);
+        if (match) onProgress({ percent: Math.min(99, Number(match[1])), phase: "downloading" });
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-4e3);
+    });
+    const deadline = setTimeout(() => terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u8D85\u8FC7 10 \u5206\u949F\uFF0C\u5DF2\u505C\u6B62")), 6e5);
+    let checking = false;
+    const quota = setInterval(async () => {
+      if (checking || finished) return;
+      checking = true;
+      try {
+        const files = await readdir5(directory);
+        const sizes = await Promise.all(files.map((name) => stat4(join5(directory, name)).then((item) => item.size).catch(() => 0)));
+        if (sizes.reduce((sum, size) => sum + size, 0) > MAX_VIDEO_BYTES * 2) terminate(new Error("\u89C6\u9891\u4E0B\u8F7D\u4E34\u65F6\u6587\u4EF6\u8D85\u8FC7 512 MiB \u9650\u5236"));
+      } catch (error45) {
+        if (!finished) terminate(new Error("\u65E0\u6CD5\u68C0\u67E5\u4E0B\u8F7D\u7F13\u5B58\uFF1A" + safeError(error45.message)));
+      } finally {
+        checking = false;
+      }
+    }, 500);
+    const clean2 = () => {
+      finished = true;
+      clearTimeout(deadline);
+      clearInterval(quota);
+      signal?.removeEventListener("abort", abort);
+    };
+    child.once("error", (error45) => {
+      clean2();
+      reject(new Error("\u4E0B\u8F7D\u5668\u65E0\u6CD5\u542F\u52A8\uFF1A" + safeError(error45.message)));
+    });
+    child.once("close", async (code) => {
+      clean2();
+      if (failure) return reject(failure);
+      if (code !== 0) return reject(new Error(downloadFailure(stderr || "\u4E0B\u8F7D\u5668\u9000\u51FA " + code, target.platform)));
+      try {
+        const names = (await readdir5(directory)).filter((name) => /^video\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg)$/.test(name));
+        if (names.length !== 1) throw new Error("\u672A\u53D6\u5F97\u5B8C\u6574\u89C6\u9891\uFF0C\u53EF\u80FD\u53D7\u767B\u5F55\u3001\u65F6\u957F\u3001\u5927\u5C0F\u6216\u683C\u5F0F\u9650\u5236");
+        const path = join5(directory, names[0]);
+        if ((await stat4(path)).size > MAX_VIDEO_BYTES) throw new Error("\u89C6\u9891\u8D85\u8FC7 256 MiB \u9650\u5236");
+        resolve4({ path, title });
+      } catch (error45) {
+        reject(error45);
+      }
+    });
+  });
+}
+function createVideoIngestion({ directory, keyFile, read, download = downloadVideo }) {
+  const store = new LibraryStore(directory, { keyFile }), settings = new MediaSettings(store), cache = new MediaCache(store);
+  const platforms = createVideoPlatforms({ settings, ...read ? { read } : {} });
+  async function cleanup() {
+    await cache.removeStalePlayback();
+    const workRoot = join5(store.internal, "downloads");
+    await mkdir5(workRoot, { recursive: true, mode: 448 });
+    for (const entry of await readdir5(workRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+-[a-f0-9]{24}-[A-Za-z0-9]{6}$/.test(entry.name)) continue;
+      try {
+        process.kill(Number(entry.name.split("-")[0]), 0);
+      } catch (error45) {
+        if (error45.code === "ESRCH") await rm3(join5(workRoot, entry.name), { recursive: true, force: true });
+      }
+    }
+  }
+  async function importVideo({ url: url2, signal, onProgress = (_value) => {
+  } }) {
+    const target = videoUrl(url2), id = stableId("video:" + target.url);
+    return store.withJobLock(id, async () => {
+      signal?.throwIfAborted();
+      const existing = (await store.resources()).find((item) => item.id === id);
+      if (existing) {
+        try {
+          await access2(cache.path(id));
+          return { resource: existing, cached: true };
+        } catch (error45) {
+          if (error45.code !== "ENOENT") throw error45;
+        }
+      }
+      const workRoot = join5(store.internal, "downloads");
+      await mkdir5(workRoot, { recursive: true, mode: 448 });
+      const work = await mkdtemp(join5(workRoot, process.pid + "-" + id + "-"));
+      try {
+        onProgress({ phase: "resolving", percent: 0 });
+        let details;
+        if (target.platform === "bilibili" || await settings.key()) {
+          try {
+            details = await platforms.info(target.url, { signal });
+          } catch {
+            signal?.throwIfAborted();
+          }
+        }
+        const media = await download(target.url, work, { signal, onProgress });
+        signal?.throwIfAborted();
+        const info = await inspectVideo(media.path);
+        signal?.throwIfAborted();
+        onProgress({ phase: "encrypting", percent: 99 });
+        const path = await cache.seal(id, media.path);
+        signal?.throwIfAborted();
+        const resource = { schemaVersion: 1, id, kind: "video", title: media.title || details?.title || info.title, source: { adapter: target.platform, url: target.url }, assets: [{ role: "media", mime: "application/x-moyu-video", path }], metadata: { author: details?.author, description: details?.description, views: details?.views, metadataFetched: Boolean(details), width: info.width, height: info.height, duration: info.duration, hasAudio: info.hasAudio, managedMedia: true, extension: extname3(media.path) }, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+        await store.putResource(resource);
+        return { resource, cached: false };
+      } catch (error45) {
+        await rm3(cache.path(id), { force: true });
+        throw error45;
+      } finally {
+        await rm3(work, { recursive: true, force: true });
+      }
+    });
+  }
+  return { store, settings, cache, platforms, importVideo, cleanup };
+}
+
 // src/server/index.ts
-var root2 = resolve3(dirname2(fileURLToPath(import.meta.url)), "..");
+var root2 = resolve3(dirname3(fileURLToPath(import.meta.url)), "..");
 var plugin = {
   id: "opencode-moyu-server",
   async server(_input, options) {
     const directory = expandPath(typeof options?.booksDir === "string" ? options.booksDir : resolve3(root2, "books"));
     const keyFile = typeof options?.keyFile === "string" ? expandPath(options.keyFile) : void 0;
     const service = createIngestion({ directory, keyFile });
+    const videos = createVideoIngestion({ directory, keyFile });
     const sourceArgs = {
       url: tool.schema.string().url().describe("\u7528\u6237\u8981\u6C42\u91C7\u96C6\u7684\u5C0F\u8BF4\u76EE\u5F55\u6216\u6587\u5B57\u9875\u9762 URL\uFF0C\u53EF\u7531\u5F53\u524D\u6A21\u578B\u8054\u7F51\u68C0\u7D22\u83B7\u5F97"),
       sourceId: tool.schema.string().optional().describe("\u6765\u6E90\u9002\u914D\u5668 ID\uFF0C\u9ED8\u8BA4\u81EA\u52A8\u9009\u62E9"),
@@ -20570,10 +21019,38 @@ var plugin = {
     return {
       tool: {
         moyu_sources: tool({
-          description: "\u5217\u51FA\u6478\u9C7C\u8D44\u6599\u5E93\u652F\u6301\u7684\u6765\u6E90\u9002\u914D\u5668\u3001\u5185\u5BB9\u7C7B\u578B\u548C\u80FD\u529B\u3002\u5F53\u524D HTML \u5C0F\u8BF4\u4F7F\u7528\u7EAF HTTP/HTTPS \u83B7\u53D6\uFF0C\u4E0D\u542F\u52A8\u6D4F\u89C8\u5668\u6216\u6267\u884C\u9875\u9762\u811A\u672C\uFF1B\u89C6\u9891\u7B49\u7C7B\u578B\u5F85\u63A5\u5165\u4E13\u7528\u9002\u914D\u5668\u3002",
+          description: "\u5217\u51FA\u6478\u9C7C\u8D44\u6599\u5E93\u7684\u5C0F\u8BF4\u53CA\u89C6\u9891\u6765\u6E90\u3002\u5C0F\u8BF4\u4F7F\u7528 moyu_catalog / moyu_import\uFF1BB \u7AD9\u548C YouTube \u4F7F\u7528 moyu_video_search / moyu_video_info / moyu_video_import\u3002\u5747\u4E0D\u4F7F\u7528\u6D4F\u89C8\u5668\u3002",
           args: {},
           async execute() {
-            return JSON.stringify(service.registry.list());
+            return JSON.stringify([...service.registry.list(), ...videos.platforms.list().map((item) => ({ ...item, kinds: ["video"], capabilities: ["search", "info", "import"] }))]);
+          }
+        }),
+        moyu_video_search: tool({
+          description: "\u641C\u7D22 B \u7AD9\u6216 YouTube \u7684\u516C\u5F00\u89C6\u9891\uFF0C\u6700\u591A\u8FD4\u56DE 5 \u6761\u6807\u9898\u3001\u4F5C\u8005\u548C\u94FE\u63A5\uFF1BYouTube \u641C\u7D22\u9700\u8981\u7528\u6237\u5728\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u4E2D\u586B\u5199 API Key\u3002\u4E0D\u8981\u5411\u7528\u6237\u7D22\u8981\u5BC6\u94A5\u653E\u5165\u804A\u5929\u3002\u53EA\u7528 HTTP\uFF0C\u4E0D\u542F\u52A8\u6D4F\u89C8\u5668\u3002",
+          args: { platform: tool.schema.enum(["bilibili", "youtube"]), query: tool.schema.string().min(1).max(200), limit: tool.schema.number().int().min(1).max(5).default(5) },
+          async execute(args, context) {
+            const origin = args.platform === "youtube" ? "https://www.googleapis.com" : "https://api.bilibili.com";
+            await context.ask({ permission: "webfetch", patterns: [origin + "/*"], always: [origin + "/*"], metadata: { platform: args.platform } });
+            return JSON.stringify(await videos.platforms.search({ ...args, signal: context.abort }));
+          }
+        }),
+        moyu_video_info: tool({
+          description: "\u8BFB\u53D6 B \u7AD9 / YouTube \u89C6\u9891\u6807\u9898\u3001\u4F5C\u8005\u3001\u65F6\u957F\u548C\u7B80\u4ECB\uFF0C\u8FD4\u56DE\u7CBE\u7B80\u8D44\u6599\u3002\u4FE1\u606F\u67E5\u8BE2\u4E0D\u4EE3\u8868\u5DF2\u4E0B\u8F7D\uFF0C\u4E5F\u4E0D\u63D0\u4F9B\u5A92\u4F53\u6D41\u3002YouTube API Key \u7531\u672C\u5730\u89C6\u9891\u6765\u6E90\u8BBE\u7F6E\u7BA1\u7406\u3002",
+          args: { url: tool.schema.string().min(1).max(500) },
+          async execute(args, context) {
+            const target = videoUrl(args.url);
+            await context.ask({ permission: "webfetch", patterns: [target.url], always: [new URL(target.url).origin + "/*"], metadata: { platform: target.platform } });
+            return JSON.stringify(await videos.platforms.info(target.url, { signal: context.abort }));
+          }
+        }),
+        moyu_video_import: tool({
+          description: "\u4E0B\u8F7D\u7528\u6237\u6307\u5B9A\u7684\u4E00\u4E2A B \u7AD9 / YouTube \u516C\u5F00\u89C6\u9891\u5E76\u52A0\u5BC6\u653E\u5165\u89C6\u9891\u5E93\uFF0C\u7528 /video \u5728\u4FA7\u680F\u50CF\u7D20\u64AD\u653E\u3002\u4F7F\u7528 HTTP \u4E0B\u8F7D\u5668 yt-dlp\uFF0C\u4E0D\u7528\u6D4F\u89C8\u5668\u6216\u7528\u6237\u767B\u5F55\u3002\u6700\u9AD8 480p\uFF0C\u5355\u89C6\u9891\u6700\u591A 256 MiB / 60 \u5206\u949F\uFF0C\u9047\u5230\u8BBF\u95EE\u62D2\u7EDD\u505C\u6B62\u3002API Key \u4E0D\u80FD\u4EE3\u66FF\u89C6\u9891\u8BBF\u95EE\u6743\u9650\u3002\u76F8\u540C URL \u5DF2\u6709\u7F13\u5B58\u65F6\u76F4\u63A5\u590D\u7528\uFF0C\u4E0D\u8FD4\u56DE\u539F\u59CB\u5A92\u4F53\u6216\u4E34\u65F6\u6D41\u94FE\u63A5\u3002",
+          args: { url: tool.schema.string().min(1).max(500) },
+          async execute(args, context) {
+            const target = videoUrl(args.url);
+            await context.ask({ permission: "webfetch", patterns: [target.url], always: [new URL(target.url).origin + "/*"], metadata: { platform: target.platform, download: true } });
+            const result = await videos.importVideo({ url: target.url, signal: context.abort, onProgress: (progress) => context.metadata({ title: `\u89C6\u9891\u91C7\u96C6 \xB7 ${progress.phase} ${progress.percent.toFixed(0)}%`, metadata: progress }) });
+            return JSON.stringify({ id: result.resource.id, title: result.resource.title, source: target.url, duration: result.resource.metadata.duration, cached: result.cached, status: "ready", encrypted: true });
           }
         }),
         moyu_catalog: tool({

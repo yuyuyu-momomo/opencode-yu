@@ -308,9 +308,10 @@ const tui: TuiPlugin = async (api, options) => {
     watcher.close()
     clearTimeout(refresh)
     save()
-    video.dispose()
+    const disposing = video.dispose()
     api.renderer.off("resize", resize)
     if (ownsDialog) closeDialog()
+    return disposing
   })
 
   createEffect(() => {

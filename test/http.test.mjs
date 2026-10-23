@@ -19,3 +19,17 @@ test("实际 HTTP 处理重定向、GBK 编码、响应上限和总超时", asyn
     await assert.rejects(read(base + "/slow"), /超时|总时限/)
   } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)) }
 })
+
+test("私密请求头不会跨来源重定向，API 可禁止所有重定向", async () => {
+  let leaked
+  const target = http.createServer((req, res) => { leaked=req.headers['x-goog-api-key'];res.writeHead(200,{'Content-Type':'application/json'});res.end('{}') })
+  await new Promise(resolve=>target.listen(0,'127.0.0.1',resolve))
+  const source=http.createServer((_req,res)=>{res.writeHead(302,{Location:'http://127.0.0.1:'+target.address().port+'/'});res.end()})
+  await new Promise(resolve=>source.listen(0,'127.0.0.1',resolve))
+  try {
+    const url='http://127.0.0.1:'+source.address().port+'/'
+    await createHttpClient({allowPrivate:true,useProxy:false})(url,{headers:{'X-Goog-Api-Key':'test-secret'}})
+    assert.equal(leaked,undefined)
+    await assert.rejects(createHttpClient({allowPrivate:true,useProxy:false,maxRedirects:0})(url,{headers:{'X-Goog-Api-Key':'test-secret'}}),/重定向/)
+  } finally { await Promise.all([source,target].map(server=>new Promise(resolve=>server.close(resolve)))) }
+})

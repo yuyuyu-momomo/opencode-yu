@@ -127,6 +127,7 @@ try:
     tmux("send-keys", "-t", "reader:0.0", "M-Right")
     wait_for(lambda text: "2 /" in text, "next-page")
     tmux("send-keys", "-t", "reader:0.0", "-l", "/moyu")
+    time.sleep(.6)  # Let slash completion register before accepting it.
     tmux("send-keys", "-t", "reader:0.0", "Enter")
     time.sleep(0.4)  # Arguments-capable commands first complete to '/moyu '.
     tmux("send-keys", "-t", "reader:0.0", "Enter")

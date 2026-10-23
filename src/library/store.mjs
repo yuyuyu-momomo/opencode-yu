@@ -61,7 +61,7 @@ export class LibraryStore {
   async deleteResource(id) {
     if (!/^[a-f0-9]{24}$/.test(id)) throw new Error("无效资料 ID")
     return this.withJobLock(id, async () => {
-      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc")]) {
+      for (const path of [join(this.directory, id + ".moyubook"), this.jobPath(id), join(this.internal, "resources", id + ".enc"), join(this.internal, "media", id + ".moyuvid")]) {
         await unlink(path).catch((error) => { if (error.code !== "ENOENT") throw error })
       }
       await rm(join(this.internal, "parts", id), { recursive: true, force: true })
