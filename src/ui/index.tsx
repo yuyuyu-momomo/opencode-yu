@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { ScrollBoxRenderable, type BoxRenderable, type MouseEvent } from "@opentui/core"
 import { dirname, resolve, basename } from "node:path"
 import { watch } from "node:fs"
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url"
 import { createHash } from "node:crypto"
 import { chaptersOf, expandPath, listBooks, loadBook, pageAt, paginate } from "../library/text-reader.mjs"
 import { LibraryStore } from "../library/store.mjs"
-import { sidebarLayout } from "./sidebar-layout.mjs"
+import { sidebarDock, sidebarLayout } from "./sidebar-layout.mjs"
 
 type Book = Awaited<ReturnType<typeof loadBook>>
 const prefix = "opencode-moyu:"
@@ -33,17 +33,19 @@ const tui: TuiPlugin = async (api, options) => {
   const [heightPercent, setHeightPercent] = createSignal<number>()
   const [widthPercent, setWidthPercent] = createSignal<number>()
   const [viewportHeight, setViewportHeight] = createSignal<number>()
+  const [hostRows, setHostRows] = createSignal(0)
   // V2 does not expose the host's onboarding dismissal state; reserve its space.
   const onboarding = createMemo(() => options?.hostMajor === 2 || (!api.kv.get("dismissed_getting_started", false) && !api.state.provider.some(
     (provider) => provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost?.input !== 0),
   )))
-  const chromeRows = () => height() < 40 ? 8 : 11
-  const availableRows = createMemo(() => Math.max(4, viewportHeight() === undefined
+  const chromeRows = () => height() < 40 ? 9 : 12
+  const minimumRows = () => options?.hostMajor !== 2 && height() < 40 ? 2 : 4
+  const availableRows = createMemo(() => Math.max(minimumRows(), viewportHeight() === undefined
     ? height() - (onboarding() ? 31 : 20)
-    : viewportHeight()! - chromeRows()))
+    : viewportHeight()! - chromeRows() - hostRows()))
   const rows = createMemo(() => heightPercent() === undefined
     ? Math.min(fixedRows ?? 24, availableRows())
-    : Math.max(4, Math.floor(availableRows() * heightPercent()! / 100)))
+    : Math.max(minimumRows(), Math.floor(availableRows() * heightPercent()! / 100)))
   const pages = createMemo(() => paginate(book()?.text ?? "", bodyWidth(), rows()))
   const page = createMemo(() => pageAt(pages(), offset()))
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "正文")
@@ -262,7 +264,7 @@ const tui: TuiPlugin = async (api, options) => {
   })
   function removeBook() {
     const current = book()
-    if (!current?.resourceId) return
+    if (!current?.resourceId) return toast("请先在书架打开要删除的小说")
     dialog(() => <api.ui.DialogConfirm
       title="从资料库删除"
       message={`删除《${current.title}》的加密副本和采集缓存？外部原文件保留。`}
@@ -272,9 +274,11 @@ const tui: TuiPlugin = async (api, options) => {
         void library.deleteResource(current.resourceId).then(() => {
           if (api.lifecycle.signal.aborted) return
           api.kv.set(progressKey(current.path), 0)
-          api.kv.set(prefix + "last", "")
-          setBook(undefined)
-          setOffset(0)
+          if (book()?.path === current.path) {
+            api.kv.set(prefix + "last", "")
+            setBook(undefined)
+            setOffset(0)
+          }
           toast("已删除加密副本和采集缓存")
         }).catch((error) => toast(String(error), "error"))
       }}
@@ -331,12 +335,27 @@ const tui: TuiPlugin = async (api, options) => {
 
   function Reader() {
     let viewport: BoxRenderable | undefined
+    let readerNode: BoxRenderable | undefined
+    let docking: ReturnType<typeof sidebarDock>
+    let mountTimer: ReturnType<typeof setTimeout> | undefined
     const [layout, setLayout] = createSignal<ReturnType<typeof sidebarLayout>>()
-    const measure = () => { if (viewport && !viewport.isDestroyed) setViewportHeight(viewport.height) }
+    const measure = () => { if (viewport && !viewport.isDestroyed && Number.isFinite(viewport.height) && viewport.height > 0) setViewportHeight(viewport.height) }
     const applyWidth = () => layout()?.apply(visible() ? widthPercent() : undefined, width())
     // Native resize notifications can arrive before the frame commits its size.
     const frameResized = () => queueMicrotask(() => { if (!api.lifecycle.signal.aborted) applyWidth() })
     createEffect(applyWidth)
+    const dock = () => {
+      if (options?.hostMajor !== 2 || api.lifecycle.signal.aborted) return
+      measure()
+      if (visible() && readerNode && !readerNode.isDestroyed && viewport && !docking) docking = sidebarDock(readerNode, viewport, dock)
+      setHostRows(docking?.measure(visible()) ?? 0)
+      if (!visible()) docking = undefined
+    }
+    createEffect(dock)
+    api.renderer.on("frame", dock)
+    onMount(() => {
+      mountTimer = setTimeout(() => { if (readerNode && !readerNode.isDestroyed) { observe(readerNode); dock() } }, 0)
+    })
     function observe(node: BoxRenderable) {
       // V1's scrollbox also contains host cards; retain its conservative height budget.
       if (options?.hostMajor !== 2) return
@@ -349,13 +368,17 @@ const tui: TuiPlugin = async (api, options) => {
         sizing?.frame?.on("resized", frameResized)
         viewport.on("resized", measure)
         measure()
+        dock()
         break
       }
     }
     onCleanup(() => {
+      clearTimeout(mountTimer)
       viewport?.off("resized", measure)
       layout()?.frame?.off("resized", frameResized)
       layout()?.restore()
+      api.renderer.off("frame", dock)
+      docking?.restore()
     })
     const theme = () => api.theme.current
     const gap = () => height() < 40 ? 0 : 1
@@ -377,14 +400,15 @@ const tui: TuiPlugin = async (api, options) => {
         onMouseOut={() => { pressed = false }} onMouseDrag={() => { pressed = false }} onMouseUp={click}>{props.label}</text>
     }
     return <Show when={visible()} fallback={<box height={1}><Button label="[显示阅读]" action={toggle} /></box>}>
-      <box flexShrink={0} width="100%" height={book() ? rows() + chromeRows() : undefined} onSizeChange={function(this: BoxRenderable) { setBodyWidth(Math.max(2, Math.floor(this.width))); observe(this) }}>
+      <box ref={(node: BoxRenderable) => { readerNode = node }} flexShrink={0} width="100%" marginBottom={options?.hostMajor === 2 ? "auto" : 0} height={book() ? rows() + chromeRows() : undefined} onSizeChange={function(this: BoxRenderable) { readerNode = this; setBodyWidth(Math.max(2, Math.floor(this.width))); observe(this); dock() }}>
         <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
           <text fg={theme().text}><b>随手读</b></text>
-          <box flexDirection="row" gap={1}>
-            <Button label="[书架]" action={shelf} />
-            <Button label="[目录]" action={chapters} />
-            <Button label="[隐藏]" action={toggle} muted />
-          </box>
+          <Button label="[隐藏]" action={toggle} muted />
+        </box>
+        <box flexShrink={0} height={1} flexDirection="row" gap={2}>
+          <Button label="[书架]" action={shelf} />
+          <Button label="[目录]" action={chapters} />
+          <Button label="[删除]" action={removeBook} />
         </box>
         <box flexShrink={0} height={1 + gap()} flexDirection="row" gap={2}>
           <Show when={options?.hostMajor === 2}><Button label={`[宽度 ${widthPercent() ?? "自动"}${widthPercent() === undefined ? "" : "%"}]`} action={widthSize} /></Show>
@@ -401,7 +425,6 @@ const tui: TuiPlugin = async (api, options) => {
           <box flexShrink={0} height={4 + gap()} paddingTop={gap()}>
             <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
               <Button label={`${page() + 1} / ${pages().length} 页 · ${percentage()}%`} action={jump} muted />
-              <Button label="[删除]" action={removeBook} muted />
             </box>
             <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
               <Button label="[‹ 上一页]" action={() => turn(-1)} />

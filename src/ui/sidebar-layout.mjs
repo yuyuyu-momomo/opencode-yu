@@ -33,3 +33,29 @@ export function sidebarLayout(scrollbox) {
     restore,
   }
 }
+
+/** Fill the sidebar viewport so the reader's auto margin pushes native cards
+ * to its bottom. Keep their own renderers, reactive data and click handlers. */
+export function sidebarDock(reader, viewport, changed = () => {}) {
+  const container = reader.parent
+  if (!container?.getChildren().includes(reader)) return
+  const original = container.minHeight ?? null
+  const previous = container.onSizeChange
+  const resized = function() { previous?.call(this); queueMicrotask(changed) }
+  container.onSizeChange = resized
+  let minimum
+  function restore() {
+    if (minimum !== undefined && !container.isDestroyed) container.minHeight = original
+    if (!container.isDestroyed && container.onSizeChange === resized) container.onSizeChange = previous
+    minimum = undefined
+  }
+  return {
+    measure(active) {
+      if (!active || reader.isDestroyed || viewport.isDestroyed || container.isDestroyed) { restore(); return 0 }
+      if (minimum !== viewport.height) { minimum = viewport.height; container.minHeight = minimum }
+      const cards = container.getChildren().filter((node) => node !== reader && !node.isDestroyed && node.visible !== false && node.height > 0)
+      return cards.reduce((rows, node) => rows + node.height + 1, 0)
+    },
+    restore,
+  }
+}

@@ -216,6 +216,25 @@ try:
     before_page = int(re.search(r"(\d+) / \d+ 页", capture("before-mouse-prev"))[1])
     click("[‹ 上一页]", "mouse-prev")
     wait_for(lambda text: (match := re.search(r"(\d+) / \d+ 页", text)) and int(match[1]) == before_page - 1, "mouse-page-turn")
+    library = CONFIG / "extensions/opencode-moyu/books"
+    encrypted = list(library.glob("*.moyubook"))
+    assert len(encrypted) == 1
+    resource_id = encrypted[0].stem
+    click("[删除]", "delete-open")
+    wait_for(lambda text: "从资料库删除" in text and "夜班便利店" in text, "top-delete-confirmation")
+    tmux("send-keys", "-t", "reader:0.0", "Escape")
+    wait_for(lambda text: "从资料库删除" not in text and "[删除]" in text, "delete-cancel")
+    assert encrypted[0].exists()
+    click("[删除]", "delete-reopen")
+    wait_for(lambda text: "从资料库删除" in text and "confirm" in text.lower(), "delete-mouse-confirm-ready")
+    current = capture("delete-confirm-buttons")
+    confirm = "Confirm" if "Confirm" in current else "confirm"
+    click(confirm, "delete-confirm-click")
+    wait_for(lambda text: "点击打开本地小说" in text and "从资料库删除" not in text, "delete-clears-reader")
+    assert not encrypted[0].exists()
+    assert not list((library / ".moyu").rglob(resource_id + "*"))
+    assert (library / "夜班便利店.txt").exists()
+    CHECKS.append("delete-removes-encrypted-resource-and-cache")
     print(json.dumps({"checks": CHECKS, "artifacts": str(WORK)}, ensure_ascii=False), flush=True)
 finally:
     tmux("kill-server", check=False)

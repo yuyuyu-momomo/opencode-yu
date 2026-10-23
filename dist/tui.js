@@ -37,12 +37,13 @@ var require_emoji_regex = __commonJS({
 import { memo as _$memo } from "@opentui/solid";
 import { createTextNode as _$createTextNode } from "@opentui/solid";
 import { insertNode as _$insertNode } from "@opentui/solid";
+import { use as _$use } from "@opentui/solid";
 import { effect as _$effect } from "@opentui/solid";
 import { insert as _$insert } from "@opentui/solid";
 import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { ScrollBoxRenderable } from "@opentui/core";
 import { dirname as dirname3, resolve as resolve3, basename as basename2 } from "node:path";
 import { watch } from "node:fs";
@@ -527,6 +528,39 @@ function sidebarLayout(scrollbox) {
     restore
   };
 }
+function sidebarDock(reader, viewport, changed = () => {
+}) {
+  const container = reader.parent;
+  if (!container?.getChildren().includes(reader)) return;
+  const original = container.minHeight ?? null;
+  const previous = container.onSizeChange;
+  const resized = function() {
+    previous?.call(this);
+    queueMicrotask(changed);
+  };
+  container.onSizeChange = resized;
+  let minimum;
+  function restore() {
+    if (minimum !== void 0 && !container.isDestroyed) container.minHeight = original;
+    if (!container.isDestroyed && container.onSizeChange === resized) container.onSizeChange = previous;
+    minimum = void 0;
+  }
+  return {
+    measure(active) {
+      if (!active || reader.isDestroyed || viewport.isDestroyed || container.isDestroyed) {
+        restore();
+        return 0;
+      }
+      if (minimum !== viewport.height) {
+        minimum = viewport.height;
+        container.minHeight = minimum;
+      }
+      const cards = container.getChildren().filter((node) => node !== reader && !node.isDestroyed && node.visible !== false && node.height > 0);
+      return cards.reduce((rows, node) => rows + node.height + 1, 0);
+    },
+    restore
+  };
+}
 
 // src/ui/index.tsx
 var prefix = "opencode-moyu:";
@@ -551,10 +585,12 @@ var tui = async (api, options) => {
   const [heightPercent, setHeightPercent] = createSignal();
   const [widthPercent, setWidthPercent] = createSignal();
   const [viewportHeight, setViewportHeight] = createSignal();
+  const [hostRows, setHostRows] = createSignal(0);
   const onboarding = createMemo(() => options?.hostMajor === 2 || !api.kv.get("dismissed_getting_started", false) && !api.state.provider.some((provider) => provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost?.input !== 0)));
-  const chromeRows = () => height() < 40 ? 8 : 11;
-  const availableRows = createMemo(() => Math.max(4, viewportHeight() === void 0 ? height() - (onboarding() ? 31 : 20) : viewportHeight() - chromeRows()));
-  const rows = createMemo(() => heightPercent() === void 0 ? Math.min(fixedRows ?? 24, availableRows()) : Math.max(4, Math.floor(availableRows() * heightPercent() / 100)));
+  const chromeRows = () => height() < 40 ? 9 : 12;
+  const minimumRows = () => options?.hostMajor !== 2 && height() < 40 ? 2 : 4;
+  const availableRows = createMemo(() => Math.max(minimumRows(), viewportHeight() === void 0 ? height() - (onboarding() ? 31 : 20) : viewportHeight() - chromeRows() - hostRows()));
+  const rows = createMemo(() => heightPercent() === void 0 ? Math.min(fixedRows ?? 24, availableRows()) : Math.max(minimumRows(), Math.floor(availableRows() * heightPercent() / 100)));
   const pages = createMemo(() => paginate(book()?.text ?? "", bodyWidth(), rows()));
   const page = createMemo(() => pageAt(pages(), offset()));
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "\u6B63\u6587");
@@ -837,7 +873,7 @@ var tui = async (api, options) => {
   });
   function removeBook() {
     const current = book();
-    if (!current?.resourceId) return;
+    if (!current?.resourceId) return toast("\u8BF7\u5148\u5728\u4E66\u67B6\u6253\u5F00\u8981\u5220\u9664\u7684\u5C0F\u8BF4");
     dialog(() => _$createComponent(api.ui.DialogConfirm, {
       title: "\u4ECE\u8D44\u6599\u5E93\u5220\u9664",
       get message() {
@@ -849,9 +885,11 @@ var tui = async (api, options) => {
         void library.deleteResource(current.resourceId).then(() => {
           if (api.lifecycle.signal.aborted) return;
           api.kv.set(progressKey(current.path), 0);
-          api.kv.set(prefix + "last", "");
-          setBook(void 0);
-          setOffset(0);
+          if (book()?.path === current.path) {
+            api.kv.set(prefix + "last", "");
+            setBook(void 0);
+            setOffset(0);
+          }
           toast("\u5DF2\u5220\u9664\u52A0\u5BC6\u526F\u672C\u548C\u91C7\u96C6\u7F13\u5B58");
         }).catch((error) => toast(String(error), "error"));
       }
@@ -968,15 +1006,35 @@ var tui = async (api, options) => {
   });
   function Reader() {
     let viewport;
+    let readerNode;
+    let docking;
+    let mountTimer;
     const [layout, setLayout] = createSignal();
     const measure = () => {
-      if (viewport && !viewport.isDestroyed) setViewportHeight(viewport.height);
+      if (viewport && !viewport.isDestroyed && Number.isFinite(viewport.height) && viewport.height > 0) setViewportHeight(viewport.height);
     };
     const applyWidth = () => layout()?.apply(visible() ? widthPercent() : void 0, width());
     const frameResized = () => queueMicrotask(() => {
       if (!api.lifecycle.signal.aborted) applyWidth();
     });
     createEffect(applyWidth);
+    const dock = () => {
+      if (options?.hostMajor !== 2 || api.lifecycle.signal.aborted) return;
+      measure();
+      if (visible() && readerNode && !readerNode.isDestroyed && viewport && !docking) docking = sidebarDock(readerNode, viewport, dock);
+      setHostRows(docking?.measure(visible()) ?? 0);
+      if (!visible()) docking = void 0;
+    };
+    createEffect(dock);
+    api.renderer.on("frame", dock);
+    onMount(() => {
+      mountTimer = setTimeout(() => {
+        if (readerNode && !readerNode.isDestroyed) {
+          observe(readerNode);
+          dock();
+        }
+      }, 0);
+    });
     function observe(node) {
       if (options?.hostMajor !== 2) return;
       if (viewport) return;
@@ -988,13 +1046,17 @@ var tui = async (api, options) => {
         sizing?.frame?.on("resized", frameResized);
         viewport.on("resized", measure);
         measure();
+        dock();
         break;
       }
     }
     onCleanup(() => {
+      clearTimeout(mountTimer);
       viewport?.off("resized", measure);
       layout()?.frame?.off("resized", frameResized);
       layout()?.restore();
+      api.renderer.off("frame", dock);
+      docking?.restore();
     });
     const theme = () => api.theme.current;
     const gap = () => height() < 40 ? 0 : 1;
@@ -1052,23 +1114,35 @@ var tui = async (api, options) => {
       get children() {
         var _el$2 = _$createElement("box"), _el$3 = _$createElement("box"), _el$4 = _$createElement("text"), _el$5 = _$createElement("b"), _el$7 = _$createElement("box"), _el$8 = _$createElement("box");
         _$insertNode(_el$2, _el$3);
+        _$insertNode(_el$2, _el$7);
         _$insertNode(_el$2, _el$8);
+        _$use((node) => {
+          readerNode = node;
+        }, _el$2);
         _$setProp(_el$2, "flexShrink", 0);
         _$setProp(_el$2, "width", "100%");
         _$setProp(_el$2, "onSizeChange", function() {
+          readerNode = this;
           setBodyWidth(Math.max(2, Math.floor(this.width)));
           observe(this);
+          dock();
         });
         _$insertNode(_el$3, _el$4);
-        _$insertNode(_el$3, _el$7);
         _$setProp(_el$3, "flexShrink", 0);
         _$setProp(_el$3, "height", 1);
         _$setProp(_el$3, "flexDirection", "row");
         _$setProp(_el$3, "justifyContent", "space-between");
         _$insertNode(_el$4, _el$5);
         _$insertNode(_el$5, _$createTextNode(`\u968F\u624B\u8BFB`));
+        _$insert(_el$3, _$createComponent(Button, {
+          label: "[\u9690\u85CF]",
+          action: toggle,
+          muted: true
+        }), null);
+        _$setProp(_el$7, "flexShrink", 0);
+        _$setProp(_el$7, "height", 1);
         _$setProp(_el$7, "flexDirection", "row");
-        _$setProp(_el$7, "gap", 1);
+        _$setProp(_el$7, "gap", 2);
         _$insert(_el$7, _$createComponent(Button, {
           label: "[\u4E66\u67B6]",
           action: shelf
@@ -1078,9 +1152,8 @@ var tui = async (api, options) => {
           action: chapters
         }), null);
         _$insert(_el$7, _$createComponent(Button, {
-          label: "[\u9690\u85CF]",
-          action: toggle,
-          muted: true
+          label: "[\u5220\u9664]",
+          action: removeBook
         }), null);
         _$setProp(_el$8, "flexShrink", 0);
         _$setProp(_el$8, "flexDirection", "row");
@@ -1171,12 +1244,7 @@ var tui = async (api, options) => {
                 },
                 action: jump,
                 muted: true
-              }), null);
-              _$insert(_el$11, _$createComponent(Button, {
-                label: "[\u5220\u9664]",
-                action: removeBook,
-                muted: true
-              }), null);
+              }));
               _$setProp(_el$12, "flexShrink", 0);
               _$setProp(_el$12, "height", 1);
               _$setProp(_el$12, "flexDirection", "row");
@@ -1208,15 +1276,17 @@ var tui = async (api, options) => {
           }
         }), null);
         _$effect((_p$) => {
-          var _v$7 = book() ? rows() + chromeRows() : void 0, _v$8 = theme().text, _v$9 = 1 + gap();
-          _v$7 !== _p$.e && (_p$.e = _$setProp(_el$2, "height", _v$7, _p$.e));
-          _v$8 !== _p$.t && (_p$.t = _$setProp(_el$4, "fg", _v$8, _p$.t));
-          _v$9 !== _p$.a && (_p$.a = _$setProp(_el$8, "height", _v$9, _p$.a));
+          var _v$7 = options?.hostMajor === 2 ? "auto" : 0, _v$8 = book() ? rows() + chromeRows() : void 0, _v$9 = theme().text, _v$0 = 1 + gap();
+          _v$7 !== _p$.e && (_p$.e = _$setProp(_el$2, "marginBottom", _v$7, _p$.e));
+          _v$8 !== _p$.t && (_p$.t = _$setProp(_el$2, "height", _v$8, _p$.t));
+          _v$9 !== _p$.a && (_p$.a = _$setProp(_el$4, "fg", _v$9, _p$.a));
+          _v$0 !== _p$.o && (_p$.o = _$setProp(_el$8, "height", _v$0, _p$.o));
           return _p$;
         }, {
           e: void 0,
           t: void 0,
-          a: void 0
+          a: void 0,
+          o: void 0
         });
         return _el$2;
       }

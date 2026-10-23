@@ -12,6 +12,7 @@ import tempfile
 from threading import Thread
 import time
 import urllib.request
+import unicodedata
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK = Path(tempfile.mkdtemp(prefix="opencode-moyu-collection-smoke-"))
@@ -50,6 +51,7 @@ class MockModel(BaseHTTPRequestHandler):
             self.end_headers()
             for delta, finish in [({"role": "assistant", "content": reply}, None), ({}, "stop")]:
                 part = {"id": "moyu-mock", "object": "chat.completion.chunk", "created": int(time.time()), "model": "moyu-mock", "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+                if finish: part["usage"] = {"prompt_tokens": 1000, "completion_tokens": 5, "total_tokens": 1005}
                 self.wfile.write(("data: " + json.dumps(part, ensure_ascii=False) + "\n\n").encode())
             self.wfile.write(b"data: [DONE]\n\n")
         else:
@@ -110,6 +112,28 @@ def wait_for(predicate, name, timeout=35):
     raise AssertionError(f"{name}; artifacts: {WORK}")
 
 
+def click(label):
+    value = screen()
+    row, line = min(((i, line) for i, line in enumerate(value.splitlines()) if label in line), key=lambda item: item[1].index(label))
+    col = sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in line[:line.index(label)]) + 2
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{col};{row+1}M")
+    time.sleep(.15)
+    tmux("send-keys", "-t", "reader:0.0", "-l", f"\x1b[<0;{col};{row+1}m")
+    time.sleep(.2)
+
+
+def context_row():
+    return next(i for i, line in enumerate(screen().splitlines()) if line.rstrip().endswith("Context"))
+
+
+def height_choice(percent):
+    click("[高度")
+    wait_for(lambda: "阅读区高度" in screen(), f"height-{percent}-menu")
+    click(f"高度 {percent}%")
+    wait_for(lambda: f"[高度 {percent}%]" in screen() and "阅读区高度" not in screen(), f"height-{percent}-selected")
+    time.sleep(.5)
+
+
 def content(message):
     value = message.get("content", "")
     return value if isinstance(value, str) else "\n".join(part.get("text", "") for part in value if isinstance(part, dict))
@@ -155,6 +179,18 @@ try:
     assert len(users) == 1 and users[0]["text"] == SHORT
     assert users[0]["metadata"]["origin"] == "moyu"
     CHECKS.append("history-has-no-internal-rules")
+    wait_for(lambda: "Context" in screen() and "tokens" in screen(), "native-context-visible")
+    wait_for(lambda: "[删除]" in screen() and "已交给当前模型" not in screen(), "collection-toast-cleared")
+    height_choice(25)
+    low = context_row()
+    low_footer = next(i for i, line in enumerate(screen().splitlines()) if "点击上方按钮" in line)
+    assert low > low_footer + 2, "Native context should sit at the bottom, separated from the small reader"
+    height_choice(75)
+    assert context_row() == low, "Native context should stay anchored when reader height changes"
+    CHECKS.append("native-context-bottom-at-both-heights")
+    height_choice(100)
+    assert context_row() == low and "[删除]" in screen() and "下一页" in screen()
+    CHECKS.append("full-height-reserves-context-and-reader-controls")
     api(f"/api/session/{session}/compact", {})
     wait_for(lambda: any(message["type"] == "compaction" and message.get("status") == "completed" for message in api(f"/api/session/{session}/message?order=asc")["data"]), "moyu-compaction-returns-summary")
     summary_requests = [request for request in REQUESTS if "structured summary" in content(request.get("messages", [{}])[-1])]
