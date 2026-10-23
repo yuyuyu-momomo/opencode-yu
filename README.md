@@ -1,10 +1,10 @@
 # OpenCode 摸鱼阅读
 
-在 OpenCode 的**原生右侧栏**看本地小说，适配 OpenCode 2.1.2，兼容 1.19.x。终端需要显示会话侧栏；首页没有侧栏。
+在 OpenCode 的**原生右侧栏**看小说和像素视频，适配 OpenCode 2.1.2，兼容 1.19.x。点击顶部「小说 / 视频」切换，终端需要显示会话侧栏；首页没有侧栏。
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.1.7.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.2.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -34,9 +34,22 @@ bash install.sh
 
 2.x 中小说保持在侧栏上方，OpenCode 自带的 Context、任务等信息放到底部并预留高度；缩小阅读区时，两部分之间留白，统计信息不会紧跟正文上移。
 
-按 `Alt+O` 选择「打开本地文件」，输入路径，例如 `/mnt/d/books/三体.txt`。导入会生成加密副本，外部原文件保留。支持 UTF-8、带 BOM 的 UTF-16、GBK / GB18030、Markdown；单本最多 32 MiB。目前不支持 EPUB、PDF 或视频播放。
+点击「目录」时自动滚动到当前章节并选中，直接回车保持当前章节，也可搜索或点击其他章节。
+
+按 `Alt+O` 选择「打开本地文件」，输入路径，例如 `/mnt/d/books/三体.txt`。导入会生成加密副本，外部原文件保留。支持 UTF-8、带 BOM 的 UTF-16、GBK / GB18030、Markdown；单本最多 32 MiB。目前不支持 EPUB、PDF。
 
 进度按文件路径分别保存在 OpenCode 自身的插件存储中，翻页及退出时自动保存。宽度或高度变化会按实际正文区域重新分页，保留阅读位置。翻页阅读不调用模型，也不把正文写入对话。
+
+## 像素视频
+
+点击顶部「视频」→「视频库」→「打开本地视频」，输入 MP4、MKV、WebM、MOV、AVI、M4V、MPEG 或 GIF 路径；也可输入 `/video` 打开视频库。首版播放本地文件，网络视频下载、网页视频和直播尚未接入。
+
+- 视频按当前区域缩放为彩色像素画面，保留比例；默认 10 帧 / 秒，用终端半格字符显示，无需浏览器或外部画面窗口。
+- 打开及重启后均暂停、静音，点击「播放」开始；点击「开启声音」才播放音轨，「静音」立即停止声音。无音轨或音频后端不可用时明确提示。
+- 支持前后 10 秒、点击时间输入秒数或 `分:秒` 跳转，以及共享的宽高调整。切回小说、隐藏或离开面板时暂停画面和声音，小说与视频分别保存进度。
+- 视频库保存加密的文件路径、标题及媒体信息，播放进度保存到插件存储。**原视频直接从原位置读取，不复制、不加密原视频**；像素帧只在内存流转。顶部「删除」移除视频库记录与进度，保留原文件。
+
+视频需要 [FFmpeg](https://ffmpeg.org/download.html) 的 `ffmpeg`、`ffprobe`，开声还需要 `ffplay` 和可用的系统音频设备。插件会查找 PATH、用户私有目录 `~/.local/share/opencode-moyu/media/bin` 及现有 Conda 环境；小说功能不依赖这些程序。也可用 `MOYU_MEDIA_BIN` 指定目录，或分别设置 `MOYU_FFMPEG`、`MOYU_FFPROBE`、`MOYU_FFPLAY`。安装包仅包含插件，不附带 FFmpeg 二进制；可使用发行版提供的 FFmpeg 包，Windows 可将官方页面链接的构建解压后把 bin 加入 PATH。WSL 可复用 Linux 解码器和 Windows `ffplay.exe`，插件会转换文件路径。
 
 ## 调整阅读区域大小
 

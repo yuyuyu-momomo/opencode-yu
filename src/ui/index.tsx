@@ -10,6 +10,7 @@ import { createHash } from "node:crypto"
 import { chaptersOf, expandPath, listBooks, loadBook, pageAt, paginate } from "../library/text-reader.mjs"
 import { LibraryStore } from "../library/store.mjs"
 import { sidebarDock, sidebarLayout } from "./sidebar-layout.mjs"
+import { createVideoReader } from "./video"
 
 type Book = Awaited<ReturnType<typeof loadBook>>
 const prefix = "opencode-moyu:"
@@ -24,6 +25,7 @@ const tui: TuiPlugin = async (api, options) => {
   await library.ready()
   const collect = (api as typeof api & { moyu?: { collect: (query: string) => Promise<unknown> } }).moyu?.collect
   const [visible, setVisible] = createSignal(true)
+  const [mode, setMode] = createSignal<"novel" | "video">("novel")
   const [book, setBook] = createSignal<Book>()
   const [offset, setOffset] = createSignal(0)
   const [height, setHeight] = createSignal(api.renderer.height)
@@ -69,6 +71,16 @@ const tui: TuiPlugin = async (api, options) => {
     ownsDialog = true
     api.ui.dialog.replace(render, () => { ownsDialog = false })
   }
+  const video = createVideoReader(api, library, {
+    columns: bodyWidth, rows, active: () => mode() === "video" && visible() && api.route.current.name === "session",
+    activate: () => selectMode("video"), dialog, close: closeDialog,
+  })
+  function selectMode(next: "novel" | "video") {
+    save()
+    setMode(next)
+    api.kv.set(prefix + "mode", next)
+    if (next === "video") void video.restore().catch((error) => toast(String(error), "error"))
+  }
   async function open(path: string, quiet = false) {
     const token = ++request
     setBusy(true)
@@ -82,6 +94,7 @@ const tui: TuiPlugin = async (api, options) => {
       setBook(next)
       api.kv.set(prefix + "last", next.path)
       if (!quiet) {
+        selectMode("novel")
         setVisible(true)
         api.kv.set(prefix + "visible", true)
         if (api.route.current.name !== "session") toast("已打开，进入会话后可在右侧栏阅读")
@@ -93,6 +106,7 @@ const tui: TuiPlugin = async (api, options) => {
     }
   }
   function turn(direction: number) {
+    if (mode() === "video") { video.seek(direction * 10); return }
     if (!book() || busy()) return
     const next = Math.max(0, Math.min(pages().length - 1, page() + direction))
     setOffset(pages()[next].start)
@@ -147,9 +161,10 @@ const tui: TuiPlugin = async (api, options) => {
   function openMoyu() {
     setVisible(true)
     api.kv.set(prefix + "visible", true)
-    return shelf()
+    return mode() === "video" ? video.shelf() : shelf()
   }
   function chapters() {
+    if (mode() !== "novel") selectMode("novel")
     const current = book()
     if (!current) return promptFile()
     const items = current.chapters.length ? current.chapters : chaptersOf(current.text)
@@ -157,11 +172,13 @@ const tui: TuiPlugin = async (api, options) => {
     dialog(() => <api.ui.DialogSelect
       title={`${current.title} · 目录`}
       placeholder="搜索章节"
+      current={(items.findLast((item) => item.offset <= offset()) ?? items[0]).offset}
       options={items.map((item) => ({ title: item.title, value: item.offset }))}
       onSelect={(item) => { closeDialog(); setOffset(Number(item.value)); save() }}
     />)
   }
   function jump() {
+    if (mode() === "video") return video.jump()
     if (!book()) return promptFile()
     dialog(() => <api.ui.DialogPrompt
       title="跳转阅读进度 · 输入 0–100"
@@ -263,6 +280,7 @@ const tui: TuiPlugin = async (api, options) => {
     }, 100)
   })
   function removeBook() {
+    if (mode() === "video") return video.remove()
     const current = book()
     if (!current?.resourceId) return toast("请先在书架打开要删除的小说")
     dialog(() => <api.ui.DialogConfirm
@@ -290,6 +308,7 @@ const tui: TuiPlugin = async (api, options) => {
     watcher.close()
     clearTimeout(refresh)
     save()
+    video.dispose()
     api.renderer.off("resize", resize)
     if (ownsDialog) closeDialog()
   })
@@ -302,6 +321,7 @@ const tui: TuiPlugin = async (api, options) => {
     const savedWidth = Number(api.kv.get<number | null>(prefix + "widthPercent", null))
     if (Number.isFinite(savedWidth) && savedWidth >= 20 && savedWidth <= 60) setWidthPercent(savedWidth)
     setVisible(api.kv.get<boolean>(prefix + "visible", true))
+    if (api.kv.get<string>(prefix + "mode", "novel") === "video") selectMode("video")
     const initial = typeof options?.file === "string" ? options.file : api.kv.get<string>(prefix + "last", "")
     void open(initial || resolve(pluginRoot, "books/夜班便利店.txt"), true)
   })
@@ -314,6 +334,7 @@ const tui: TuiPlugin = async (api, options) => {
     mode: "base",
     commands: [
       { name: "moyu.open", title: "摸鱼阅读：打开书架", slashName: "moyu", run: openMoyu },
+      { name: "moyu.video", title: "摸鱼视频：打开视频库", slashName: "video", run: () => { selectMode("video"); setVisible(true); return video.shelf() } },
       { name: "moyu.shelf", title: "摸鱼阅读：书架 / 打开文件", slashName: "read", run: shelf },
       { name: "moyu.chapters", title: "摸鱼阅读：章节目录", slashName: "chapters", run: chapters },
       { name: "moyu.jump", title: "摸鱼阅读：跳转进度", run: jump },
@@ -373,6 +394,7 @@ const tui: TuiPlugin = async (api, options) => {
       }
     }
     onCleanup(() => {
+      video.pause()
       clearTimeout(mountTimer)
       viewport?.off("resized", measure)
       layout()?.frame?.off("resized", frameResized)
@@ -400,20 +422,25 @@ const tui: TuiPlugin = async (api, options) => {
         onMouseOut={() => { pressed = false }} onMouseDrag={() => { pressed = false }} onMouseUp={click}>{props.label}</text>
     }
     return <Show when={visible()} fallback={<box height={1}><Button label="[显示阅读]" action={toggle} /></box>}>
-      <box ref={(node: BoxRenderable) => { readerNode = node }} flexShrink={0} width="100%" marginBottom={options?.hostMajor === 2 ? "auto" : 0} height={book() ? rows() + chromeRows() : undefined} onSizeChange={function(this: BoxRenderable) { readerNode = this; setBodyWidth(Math.max(2, Math.floor(this.width))); observe(this); dock() }}>
+      <box ref={(node: BoxRenderable) => { readerNode = node }} flexShrink={0} width="100%" marginBottom={options?.hostMajor === 2 ? "auto" : 0} height={book() || mode() === "video" ? rows() + chromeRows() : undefined} onSizeChange={function(this: BoxRenderable) { readerNode = this; setBodyWidth(Math.max(2, Math.floor(this.width))); observe(this); dock() }}>
         <box flexShrink={0} height={1} flexDirection="row" justifyContent="space-between">
           <text fg={theme().text}><b>随手读</b></text>
-          <Button label="[隐藏]" action={toggle} muted />
+          <box flexDirection="row" gap={1}>
+            <Button label="[小说]" action={() => selectMode("novel")} muted={mode() !== "novel"} />
+            <Button label="[视频]" action={() => selectMode("video")} muted={mode() !== "video"} />
+            <Button label="[隐藏]" action={toggle} muted />
+          </box>
         </box>
         <box flexShrink={0} height={1} flexDirection="row" gap={2}>
-          <Button label="[书架]" action={shelf} />
-          <Button label="[目录]" action={chapters} />
+          <Button label={mode() === "video" ? "[视频库]" : "[书架]"} action={() => mode() === "video" ? video.shelf() : shelf()} />
+          <Button label={mode() === "video" ? "[跳转]" : "[目录]"} action={() => mode() === "video" ? video.jump() : chapters()} />
           <Button label="[删除]" action={removeBook} />
         </box>
         <box flexShrink={0} height={1 + gap()} flexDirection="row" gap={2}>
           <Show when={options?.hostMajor === 2}><Button label={`[宽度 ${widthPercent() ?? "自动"}${widthPercent() === undefined ? "" : "%"}]`} action={widthSize} /></Show>
           <Button label={`[高度 ${heightPercent() ?? "自动"}${heightPercent() === undefined ? "" : "%"}]`} action={heightSize} />
         </box>
+        <Show when={mode() === "novel"} fallback={<video.View Button={Button} gap={gap()} />}>
         <Show when={book()} fallback={<Button label={busy() ? "正在打开…" : "[点击打开本地小说]"} action={shelf} />}>
           <box flexShrink={0} height={2 + gap()}>
             <Button label={book()?.title ?? ""} action={shelf} muted />
@@ -432,6 +459,7 @@ const tui: TuiPlugin = async (api, options) => {
             </box>
             <text fg={theme().textMuted} height={1} wrapMode="none">点击上方按钮调整宽高</text>
           </box>
+        </Show>
         </Show>
       </box>
     </Show>

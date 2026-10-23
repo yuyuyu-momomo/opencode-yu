@@ -37,20 +37,20 @@ var require_emoji_regex = __commonJS({
 import { Plugin } from "@opencode/plugin/tui";
 
 // src/ui/index.tsx
-import { memo as _$memo } from "@opentui/solid";
-import { createTextNode as _$createTextNode } from "@opentui/solid";
-import { insertNode as _$insertNode } from "@opentui/solid";
+import { memo as _$memo2 } from "@opentui/solid";
+import { createTextNode as _$createTextNode2 } from "@opentui/solid";
+import { insertNode as _$insertNode2 } from "@opentui/solid";
 import { use as _$use } from "@opentui/solid";
-import { effect as _$effect } from "@opentui/solid";
-import { insert as _$insert } from "@opentui/solid";
-import { setProp as _$setProp } from "@opentui/solid";
-import { createElement as _$createElement } from "@opentui/solid";
-import { createComponent as _$createComponent } from "@opentui/solid";
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { effect as _$effect2 } from "@opentui/solid";
+import { insert as _$insert2 } from "@opentui/solid";
+import { setProp as _$setProp2 } from "@opentui/solid";
+import { createElement as _$createElement2 } from "@opentui/solid";
+import { createComponent as _$createComponent2 } from "@opentui/solid";
+import { createEffect as createEffect2, createMemo, createSignal as createSignal2, onCleanup, onMount, Show as Show2 } from "solid-js";
 import { ScrollBoxRenderable } from "@opentui/core";
-import { dirname as dirname3, resolve as resolve3, basename as basename2 } from "node:path";
+import { dirname as dirname3, resolve as resolve3, basename as basename3 } from "node:path";
 import { watch } from "node:fs";
-import { access } from "node:fs/promises";
+import { access as access2 } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createHash as createHash3 } from "node:crypto";
 
@@ -565,8 +565,666 @@ function sidebarDock(reader, viewport, changed = () => {
   };
 }
 
+// src/ui/video.tsx
+import { createTextNode as _$createTextNode } from "@opentui/solid";
+import { effect as _$effect } from "@opentui/solid";
+import { insertNode as _$insertNode } from "@opentui/solid";
+import { insert as _$insert } from "@opentui/solid";
+import { memo as _$memo } from "@opentui/solid";
+import { setProp as _$setProp } from "@opentui/solid";
+import { createElement as _$createElement } from "@opentui/solid";
+import { createComponent as _$createComponent } from "@opentui/solid";
+import { createEffect, createSignal, For, Show, untrack } from "solid-js";
+
+// src/media/runtime.mjs
+import { spawn, execFile } from "node:child_process";
+import { access, readdir as readdir3, realpath as realpath2, stat as stat2 } from "node:fs/promises";
+import { constants } from "node:fs";
+import { join as join2, delimiter, extname as extname2, basename as basename2 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { promisify } from "node:util";
+var execute = promisify(execFile);
+var binaries = /* @__PURE__ */ new Map();
+async function mediaBinary(name) {
+  if (binaries.has(name)) return binaries.get(name);
+  const custom = process.env["MOYU_" + name.toUpperCase()];
+  const dirs = [process.env.MOYU_MEDIA_BIN, join2(homedir2(), ".local/share/opencode-moyu/media/bin"), ...(process.env.PATH || "").split(delimiter)].filter(Boolean);
+  for (const root of ["miniconda3", "miniforge3", "anaconda3"]) {
+    const base = join2(homedir2(), root);
+    dirs.push(join2(base, "bin"));
+    for (const env of (await readdir3(join2(base, "envs")).catch(() => [])).slice(0, 32)) dirs.push(join2(base, "envs", env, "bin"));
+  }
+  const candidates = custom ? [custom] : dirs.flatMap((dir) => process.platform === "win32" ? [join2(dir, name + ".exe")] : [join2(dir, name), join2(dir, name + ".exe")]);
+  for (const path of candidates) {
+    try {
+      await access(path, constants.X_OK);
+      await execute(path, ["-version"], { timeout: 5e3, maxBuffer: 32768, windowsHide: true });
+      binaries.set(name, path);
+      return path;
+    } catch {
+    }
+  }
+  throw new Error(`\u672A\u627E\u5230 ${name}\u3002\u8BF7\u5B89\u88C5 FFmpeg\uFF08\u542B ffprobe / ffplay\uFF09\uFF0C\u6216\u8BBE\u7F6E MOYU_MEDIA_BIN \u6307\u5411\u5176 bin \u76EE\u5F55\u3002`);
+}
+async function nativeMediaPath(binary, path) {
+  if (process.platform !== "win32" && binary.toLowerCase().endsWith(".exe")) return (await execute("wslpath", ["-w", path], { timeout: 5e3 })).stdout.trim();
+  return path;
+}
+async function inspectVideo(input, cwd) {
+  if (/^[a-z]+:\/\//i.test(input.trim())) throw new Error("\u9996\u7248\u652F\u6301\u672C\u5730\u89C6\u9891\uFF0C\u8BF7\u8F93\u5165\u6587\u4EF6\u8DEF\u5F84");
+  const path = await realpath2(expandPath(input, cwd));
+  const info = await stat2(path);
+  if (!info.isFile() || !/\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/i.test(path)) throw new Error("\u8BF7\u9009\u62E9 MP4\u3001MKV\u3001WebM\u3001MOV\u3001AVI \u6216 GIF \u89C6\u9891\u6587\u4EF6");
+  const binary = await mediaBinary("ffprobe");
+  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true });
+  const data = JSON.parse(stdout), video = data.streams?.find((stream) => stream.codec_type === "video");
+  if (!video?.width || !video.height) throw new Error("\u6587\u4EF6\u6CA1\u6709\u53EF\u64AD\u653E\u7684\u89C6\u9891\u8F68\u9053");
+  const duration = Number(data.format?.duration);
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error("\u6682\u4E0D\u652F\u6301\u65E0\u6CD5\u786E\u5B9A\u65F6\u957F\u7684\u89C6\u9891");
+  const sar = String(video.sample_aspect_ratio || "1:1").split(":").map(Number);
+  let width = video.width * (sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1), height = video.height;
+  const rotation = Number(video.side_data_list?.find((item) => item.rotation !== void 0)?.rotation ?? video.tags?.rotate ?? 0);
+  if (Math.abs(rotation) % 180 === 90) [width, height] = [height, width];
+  return { path, title: basename2(path, extname2(path)), width, height, duration, hasAudio: data.streams.some((stream) => stream.codec_type === "audio") };
+}
+function launchMedia(binary, args) {
+  return spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+}
+function stopMedia(child) {
+  if (!child || child.exitCode !== null || child.signalCode) return;
+  child.kill("SIGTERM");
+  const timer = setTimeout(() => {
+    if (child.exitCode === null && !child.signalCode) child.kill("SIGKILL");
+  }, 1e3);
+  timer.unref?.();
+  child.once("close", () => clearTimeout(timer));
+}
+
+// src/media/pixels.mjs
+function pixelSize(width, height, columns, rows) {
+  const maxWidth = Math.max(2, Math.min(160, Math.floor(columns)));
+  const maxHeight = Math.max(2, Math.min(100, Math.floor(rows) * 2));
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  return { width: Math.max(2, Math.floor(width * scale)), height: Math.max(2, Math.floor(height * scale / 2) * 2) };
+}
+function pixelRuns(frame, width, height) {
+  if (frame.length !== width * height * 3) throw new Error("\u89C6\u9891\u5E27\u957F\u5EA6\u5F02\u5E38");
+  const runs = [];
+  const color = (offset) => [0, 1, 2].map((i) => Math.round(frame[offset + i] / 51) * 51).join(",");
+  for (let y = 0; y < height; y += 2) {
+    let last;
+    for (let x = 0; x < width; x++) {
+      const fg = color((y * width + x) * 3), bg = color(((y + 1) * width + x) * 3);
+      if (last?.fg === fg && last.bg === bg) last.text += "\u2580";
+      else {
+        last = { text: "\u2580", fg, bg };
+        runs.push(last);
+      }
+    }
+    if (y + 2 < height) runs.push({ text: "\n" });
+  }
+  return runs;
+}
+function mediaTime(seconds) {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(value / 3600);
+  return (hours ? hours + ":" : "") + [Math.floor(value / 60) % 60, value % 60].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+// src/media/player.mjs
+var PixelPlayer = class {
+  constructor({ onFrame = (_frame, _size) => {
+  }, onState = (_state) => {
+  }, onError = (_error) => {
+  }, binary = mediaBinary, launch = launchMedia } = {}) {
+    this.onFrame = onFrame;
+    this.onState = onState;
+    this.onError = onError;
+    this.binary = binary;
+    this.launch = launch;
+    this.generation = 0;
+    this.position = 0;
+    this.playing = false;
+    this.muted = true;
+    this.fps = 10;
+    this.columns = 36;
+    this.rows = 16;
+    this.disposed = false;
+  }
+  emit() {
+    this.onState({ position: this.position, playing: this.playing, muted: this.muted, loading: this.loading || false });
+  }
+  load(video, position = 0) {
+    this.stop();
+    this.video = video;
+    const saved = Number(position) || 0;
+    this.position = saved >= video.duration - 0.05 ? 0 : Math.max(0, saved);
+    this.muted = true;
+    this.emit();
+    return this.start(false);
+  }
+  resize(columns, rows) {
+    if (columns === this.columns && rows === this.rows) return;
+    this.columns = columns;
+    this.rows = rows;
+    if (this.video) return this.start(this.playing);
+  }
+  stop() {
+    ++this.generation;
+    clearTimeout(this.timer);
+    stopMedia(this.decoder);
+    stopMedia(this.audio);
+    this.decoder = void 0;
+    this.audio = void 0;
+    this.loading = false;
+  }
+  pause() {
+    this.stop();
+    this.playing = false;
+    this.emit();
+  }
+  play() {
+    if (this.position >= (this.video?.duration || Infinity) - 0.05) this.position = 0;
+    return this.start(true);
+  }
+  seek(seconds) {
+    if (!this.video) return;
+    this.position = Math.max(0, Math.min(this.video.duration - 0.05, Number(seconds) || 0));
+    return this.start(this.playing);
+  }
+  async setMuted(muted) {
+    if (muted === this.muted || !this.video) return;
+    const token = this.generation;
+    if (!muted && !this.video.hasAudio) throw new Error("\u8FD9\u4E2A\u89C6\u9891\u6CA1\u6709\u97F3\u8F68");
+    if (!muted) await this.binary("ffplay");
+    if (this.disposed || token !== this.generation) return;
+    this.muted = muted;
+    if (this.playing) await this.start(true);
+    else this.emit();
+  }
+  async start(playing) {
+    this.stop();
+    if (!this.video || this.disposed) return;
+    const token = this.generation, video = this.video, start = this.position;
+    this.playing = playing;
+    this.loading = true;
+    this.emit();
+    try {
+      const binary = await this.binary("ffmpeg"), path = await nativeMediaPath(binary, video.path);
+      if (token !== this.generation || this.disposed) return;
+      const size = pixelSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3;
+      const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=neighbor,setsar=1`, ...!playing ? ["-frames:v", "1"] : [], "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"];
+      const child = this.decoder = this.launch(binary, args);
+      let buffer = Buffer.alloc(0), stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now();
+      let nextFrameAt;
+      const valid = () => token === this.generation && !this.disposed;
+      const fail = (error) => {
+        if (!valid()) return;
+        this.pause();
+        this.onError(error instanceof Error ? error.message : String(error));
+      };
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk.toString()).slice(-1500);
+      });
+      child.on("error", fail);
+      child.stdout.on("data", (chunk) => {
+        if (!valid()) return;
+        buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk;
+        if (buffer.length >= frameBytes * 3) child.stdout.pause();
+      });
+      child.on("close", (code) => {
+        ended = true;
+        exitCode = code;
+        if (code && valid()) fail(new Error(`\u89C6\u9891\u89E3\u7801\u5931\u8D25\uFF1A${stderr || code}`));
+      });
+      const tick = () => {
+        if (!valid()) return;
+        if (buffer.length >= frameBytes) {
+          lastFrameAt = Date.now();
+          nextFrameAt = (nextFrameAt ?? lastFrameAt) + 1e3 / this.fps;
+          const frame = buffer.subarray(0, frameBytes);
+          buffer = buffer.subarray(frameBytes);
+          this.loading = false;
+          this.position = Math.min(video.duration, start + frames++ / this.fps);
+          this.onFrame(frame, size);
+          this.emit();
+          if (!audioStarted && playing && !this.muted) {
+            audioStarted = true;
+            void this.startAudio(video, start, token);
+          }
+          if (buffer.length < frameBytes * 3) child.stdout.resume();
+          if (!playing) {
+            this.stop();
+            return;
+          }
+        } else if (ended) {
+          if (!frames && exitCode === 0) return fail(new Error("\u6CA1\u6709\u89E3\u7801\u51FA\u89C6\u9891\u5E27"));
+          this.position = video.duration;
+          this.pause();
+          return;
+        } else if (Date.now() - lastFrameAt > 2e4) return fail(new Error("\u89C6\u9891\u89E3\u7801\u8D85\u65F6\uFF0C\u8BF7\u68C0\u67E5\u6587\u4EF6\u6216\u91CD\u65B0\u6253\u5F00"));
+        this.timer = setTimeout(tick, frames ? Math.max(buffer.length >= frameBytes ? 1 : 10, nextFrameAt - Date.now()) : 20);
+      };
+      tick();
+    } catch (error) {
+      if (token !== this.generation || this.disposed) return;
+      this.pause();
+      this.onError(error instanceof Error ? error.message : String(error));
+    }
+  }
+  async startAudio(video, position, token) {
+    try {
+      const binary = await this.binary("ffplay"), path = await nativeMediaPath(binary, video.path);
+      if (token !== this.generation || this.disposed || this.muted) return;
+      const child = this.audio = this.launch(binary, ["-hide_banner", "-loglevel", "error", "-nodisp", "-vn", "-sn", "-autoexit", "-volume", "70", "-ss", String(position), "-protocol_whitelist", "file,pipe", "-i", path]);
+      let stderr = "";
+      child.stdout.resume();
+      child.stderr.on("data", (chunk) => {
+        stderr = (stderr + chunk.toString()).slice(-600);
+      });
+      const failed = (reason) => {
+        if (token !== this.generation || this.disposed) return;
+        this.muted = true;
+        this.emit();
+        this.onError(`\u58F0\u97F3\u64AD\u653E\u5931\u8D25\uFF0C\u5DF2\u6062\u590D\u9759\u97F3\uFF1A${reason}`);
+      };
+      child.on("error", (error) => failed(error.message));
+      child.on("close", (code) => {
+        if (code) failed(stderr || String(code));
+      });
+    } catch (error) {
+      if (token !== this.generation || this.disposed) return;
+      this.muted = true;
+      this.emit();
+      this.onError(String(error));
+    }
+  }
+  dispose() {
+    this.stop();
+    this.playing = false;
+    this.disposed = true;
+  }
+};
+
+// src/sources/local-video.mjs
+async function addLocalVideo(library, input, cwd) {
+  const media = await inspectVideo(input, cwd);
+  media.title = cleanText(media.title);
+  const id = stableId("local-video:" + media.path);
+  await library.putResource({ schemaVersion: 1, id, kind: "video", title: media.title, source: { adapter: "local-video", url: media.path }, assets: [{ role: "media", mime: "video/*", path: media.path }], metadata: { ...media, originalFile: true }, updatedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  return { ...media, id };
+}
+async function resolveLocalVideo(resource) {
+  if (resource.kind !== "video" || resource.source.adapter !== "local-video") throw new Error("\u6682\u4E0D\u652F\u6301\u8FD9\u4E2A\u89C6\u9891\u6765\u6E90");
+  const path = resource.assets.find((asset) => asset.role === "media")?.path;
+  if (!path) throw new Error("\u89C6\u9891\u8BB0\u5F55\u6CA1\u6709\u672C\u5730\u6587\u4EF6\u8DEF\u5F84");
+  return { ...await inspectVideo(path), id: resource.id, title: resource.title };
+}
+
+// src/ui/video.tsx
+var prefix = "opencode-moyu:video:";
+function createVideoReader(api, library, settings) {
+  const [video, setVideo] = createSignal();
+  const [frame, setFrame] = createSignal([]);
+  const [frameSize, setFrameSize] = createSignal({
+    width: 1,
+    height: 1
+  });
+  const [state, setState] = createSignal({
+    position: 0,
+    playing: false,
+    muted: true,
+    loading: false
+  });
+  const [error, setError] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+  let token = 0, resizeTimer;
+  const colors = /* @__PURE__ */ new Map();
+  function color(value) {
+    if (!value) return void 0;
+    if (!colors.has(value)) colors.set(value, "#" + value.split(",").map((n) => Number(n).toString(16).padStart(2, "0")).join(""));
+    return colors.get(value);
+  }
+  const player = new PixelPlayer({
+    onFrame: (bytes, size) => {
+      setFrameSize({
+        width: size.width,
+        height: size.height / 2
+      });
+      setFrame(pixelRuns(bytes, size.width, size.height).map((run) => ({
+        text: run.text,
+        fg: color(run.fg),
+        bg: color(run.bg)
+      })));
+    },
+    onState: setState,
+    onError: (message) => {
+      setError(message);
+      api.ui.toast({
+        title: "\u50CF\u7D20\u5F71\u9662",
+        message,
+        variant: "error"
+      });
+    }
+  });
+  function save() {
+    const current = video();
+    if (current) api.kv.set(prefix + current.id, player.position);
+  }
+  const saveTimer = setInterval(() => {
+    if (player.playing) save();
+  }, 5e3);
+  function pause() {
+    player.pause();
+    save();
+  }
+  async function load(input, resource) {
+    const request = ++token;
+    setBusy(true);
+    setError("");
+    pause();
+    try {
+      const next = resource ? await resolveLocalVideo(resource) : await addLocalVideo(library, input, api.state.path.directory);
+      if (request !== token || api.lifecycle.signal.aborted || !settings.active()) return;
+      setVideo(next);
+      setFrame([]);
+      settings.activate();
+      api.kv.set(prefix + "last", next.id);
+      await player.load(next, api.kv.get(prefix + next.id, 0));
+    } catch (cause) {
+      if (request !== token || api.lifecycle.signal.aborted) return;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(message);
+      api.ui.toast({
+        title: "\u89C6\u9891\u6253\u5F00\u5931\u8D25",
+        message,
+        variant: "error"
+      });
+    } finally {
+      if (request === token) setBusy(false);
+    }
+  }
+  function prompt() {
+    settings.dialog(() => _$createComponent(api.ui.DialogPrompt, {
+      title: "\u6253\u5F00\u89C6\u9891 \xB7 \u672C\u5730\u6587\u4EF6",
+      placeholder: "\u4F8B\u5982 /mnt/d/videos/\u89C6\u9891.mp4",
+      get onCancel() {
+        return settings.close;
+      },
+      onConfirm: (path) => {
+        settings.close();
+        void load(path);
+      }
+    }));
+  }
+  async function shelf() {
+    try {
+      const resources = (await library.resources()).filter((item) => item.kind === "video");
+      if (api.lifecycle.signal.aborted) return;
+      settings.dialog(() => _$createComponent(api.ui.DialogSelect, {
+        title: "\u89C6\u9891\u5E93 \xB7 \u50CF\u7D20\u5F71\u9662",
+        placeholder: "\u9009\u62E9\u89C6\u9891\uFF0C\u6216\u6253\u5F00\u672C\u5730\u6587\u4EF6",
+        get current() {
+          return video()?.id;
+        },
+        get options() {
+          return [{
+            title: "\uFF0B \u6253\u5F00\u672C\u5730\u89C6\u9891\u2026",
+            value: "",
+            description: "MP4 / MKV / WebM / MOV / AVI / GIF"
+          }, ...resources.map((item) => ({
+            title: item.title,
+            value: item.id,
+            description: mediaTime(item.metadata.duration) + " \xB7 \u672C\u5730\u6587\u4EF6"
+          }))];
+        },
+        onSelect: (item) => {
+          settings.close();
+          if (!item.value) prompt();
+          else void load("", resources.find((saved) => saved.id === item.value));
+        }
+      }));
+    } catch (cause) {
+      api.ui.toast({
+        message: String(cause),
+        variant: "error"
+      });
+    }
+  }
+  async function restore() {
+    if (video() || busy()) return;
+    const id = api.kv.get(prefix + "last", "");
+    if (!id) return;
+    const resource = (await library.resources()).find((item) => item.id === id && item.kind === "video");
+    if (resource && settings.active() && !api.lifecycle.signal.aborted) await load("", resource);
+  }
+  function remove() {
+    const current = video();
+    if (!current) return shelf();
+    settings.dialog(() => _$createComponent(api.ui.DialogConfirm, {
+      title: "\u4ECE\u89C6\u9891\u5E93\u79FB\u9664",
+      get message() {
+        return `\u79FB\u9664\u300A${current.title}\u300B\u7684\u89C6\u9891\u8BB0\u5F55\u548C\u64AD\u653E\u8FDB\u5EA6\uFF1F\u539F\u89C6\u9891\u6587\u4EF6\u4FDD\u7559\u3002`;
+      },
+      get onCancel() {
+        return settings.close;
+      },
+      onConfirm: () => {
+        settings.close();
+        pause();
+        ++token;
+        void library.deleteResource(current.id).then(() => {
+          if (api.lifecycle.signal.aborted) return;
+          api.kv.set(prefix + current.id, 0);
+          if (video()?.id === current.id) {
+            setVideo(void 0);
+            setFrame([]);
+            player.video = void 0;
+            api.kv.set(prefix + "last", "");
+          }
+        }).catch((cause) => api.ui.toast({
+          message: String(cause),
+          variant: "error"
+        }));
+      }
+    }));
+  }
+  function seek(delta) {
+    if (video()) {
+      void player.seek(player.position + delta);
+      save();
+    }
+  }
+  function jump() {
+    if (!video()) return prompt();
+    settings.dialog(() => _$createComponent(api.ui.DialogPrompt, {
+      title: "\u8DF3\u8F6C\u89C6\u9891 \xB7 \u8F93\u5165\u79D2\u6570\u6216 \u5206:\u79D2",
+      placeholder: "\u4F8B\u5982 90 \u6216 1:30",
+      get onCancel() {
+        return settings.close;
+      },
+      onConfirm: (input) => {
+        const parts = input.trim().split(":");
+        if (!parts.length || parts.length > 3 || parts.some((part) => !/^\d+(?:\.\d+)?$/.test(part))) return api.ui.toast({
+          message: "\u8BF7\u8F93\u5165\u6709\u6548\u65F6\u95F4",
+          variant: "error"
+        });
+        const seconds = parts.reduce((sum, part) => sum * 60 + Number(part), 0);
+        settings.close();
+        void player.seek(seconds);
+        save();
+      }
+    }));
+  }
+  function play() {
+    setError("");
+    if (!video()) prompt();
+    else if (player.playing) pause();
+    else void player.play();
+  }
+  async function mute() {
+    setError("");
+    try {
+      await player.setMuted(!state().muted);
+    } catch (cause) {
+      const message = String(cause);
+      setError(message);
+      api.ui.toast({
+        message,
+        variant: "error"
+      });
+    }
+  }
+  createEffect(() => {
+    const columns = settings.columns(), rows = settings.rows(), active = settings.active();
+    clearTimeout(resizeTimer);
+    if (!active) {
+      untrack(pause);
+      return;
+    }
+    resizeTimer = setTimeout(() => {
+      if (!api.lifecycle.signal.aborted) void player.resize(columns, rows);
+    }, 150);
+  });
+  function dispose() {
+    ++token;
+    clearInterval(saveTimer);
+    clearTimeout(resizeTimer);
+    save();
+    player.dispose();
+  }
+  function View(props) {
+    const Button = props.Button;
+    return [(() => {
+      var _el$ = _$createElement("box"), _el$2 = _$createElement("text");
+      _$insertNode(_el$, _el$2);
+      _$setProp(_el$, "flexShrink", 0);
+      _$insert(_el$, _$createComponent(Button, {
+        get label() {
+          return _$memo(() => !!busy())() ? "\u6B63\u5728\u6253\u5F00\u89C6\u9891\u2026" : video()?.title ?? "\u8BF7\u9009\u62E9\u672C\u5730\u89C6\u9891";
+        },
+        action: shelf
+      }), _el$2);
+      _$setProp(_el$2, "height", 1);
+      _$setProp(_el$2, "wrapMode", "none");
+      _$insert(_el$2, (() => {
+        var _c$ = _$memo(() => !!error());
+        return () => _c$() ? "\u64AD\u653E\u5F02\u5E38\uFF0C\u53EF\u91CD\u65B0\u6253\u5F00\u89C6\u9891" : _$memo(() => !!!video())() ? "\u50CF\u7D20\u98CE \xB7 \u9ED8\u8BA4\u9759\u97F3" : _$memo(() => !!state().loading)() ? "\u6B63\u5728\u89E3\u7801\u2026" : state().playing ? "\u64AD\u653E\u4E2D \xB7 \u50CF\u7D20\u98CE" : "\u5DF2\u6682\u505C \xB7 \u50CF\u7D20\u98CE";
+      })());
+      _$effect((_$p) => _$setProp(_el$, "height", 2 + props.gap, _$p));
+      return _el$;
+    })(), (() => {
+      var _el$3 = _$createElement("box");
+      _$setProp(_el$3, "flexShrink", 0);
+      _$setProp(_el$3, "alignItems", "center");
+      _$setProp(_el$3, "justifyContent", "center");
+      _$insert(_el$3, _$createComponent(Show, {
+        get when() {
+          return video();
+        },
+        get fallback() {
+          return (() => {
+            var _el$8 = _$createElement("text");
+            _$insertNode(_el$8, _$createTextNode(`\u70B9\u51FB\u300C\u89C6\u9891\u5E93\u300D\u6253\u5F00\u89C6\u9891`));
+            return _el$8;
+          })();
+        },
+        get children() {
+          var _el$4 = _$createElement("text");
+          _$setProp(_el$4, "selectable", false);
+          _$setProp(_el$4, "wrapMode", "none");
+          _$insert(_el$4, _$createComponent(For, {
+            get each() {
+              return frame();
+            },
+            children: (run) => (() => {
+              var _el$0 = _$createElement("span");
+              _$insert(_el$0, () => run.text);
+              _$effect((_$p) => _$setProp(_el$0, "style", {
+                fg: run.fg,
+                bg: run.bg
+              }, _$p));
+              return _el$0;
+            })()
+          }));
+          _$effect((_p$) => {
+            var _v$ = frameSize().width, _v$2 = frameSize().height;
+            _v$ !== _p$.e && (_p$.e = _$setProp(_el$4, "width", _v$, _p$.e));
+            _v$2 !== _p$.t && (_p$.t = _$setProp(_el$4, "height", _v$2, _p$.t));
+            return _p$;
+          }, {
+            e: void 0,
+            t: void 0
+          });
+          return _el$4;
+        }
+      }));
+      _$effect((_$p) => _$setProp(_el$3, "height", settings.rows(), _$p));
+      return _el$3;
+    })(), (() => {
+      var _el$5 = _$createElement("box"), _el$6 = _$createElement("box"), _el$7 = _$createElement("box");
+      _$insertNode(_el$5, _el$6);
+      _$insertNode(_el$5, _el$7);
+      _$setProp(_el$5, "flexShrink", 0);
+      _$insert(_el$5, _$createComponent(Button, {
+        get label() {
+          return `${mediaTime(state().position)} / ${mediaTime(video()?.duration)}`;
+        },
+        action: jump,
+        muted: true
+      }), _el$6);
+      _$setProp(_el$6, "height", 1);
+      _$setProp(_el$6, "flexDirection", "row");
+      _$setProp(_el$6, "gap", 1);
+      _$insert(_el$6, _$createComponent(Button, {
+        get label() {
+          return state().playing ? "[\u6682\u505C]" : "[\u64AD\u653E]";
+        },
+        action: play
+      }), null);
+      _$insert(_el$6, _$createComponent(Button, {
+        get label() {
+          return state().muted ? "[\u5F00\u542F\u58F0\u97F3]" : "[\u9759\u97F3]";
+        },
+        action: mute
+      }), null);
+      _$setProp(_el$7, "height", 1);
+      _$setProp(_el$7, "flexDirection", "row");
+      _$setProp(_el$7, "justifyContent", "space-between");
+      _$insert(_el$7, _$createComponent(Button, {
+        label: "[\u540E\u900010\u79D2]",
+        action: () => seek(-10)
+      }), null);
+      _$insert(_el$7, _$createComponent(Button, {
+        label: "[\u524D\u8FDB10\u79D2]",
+        action: () => seek(10)
+      }), null);
+      _$effect((_p$) => {
+        var _v$3 = 4 + props.gap, _v$4 = props.gap;
+        _v$3 !== _p$.e && (_p$.e = _$setProp(_el$5, "height", _v$3, _p$.e));
+        _v$4 !== _p$.t && (_p$.t = _$setProp(_el$5, "paddingTop", _v$4, _p$.t));
+        return _p$;
+      }, {
+        e: void 0,
+        t: void 0
+      });
+      return _el$5;
+    })()];
+  }
+  return {
+    View,
+    shelf,
+    remove,
+    pause,
+    restore,
+    dispose,
+    jump,
+    seek
+  };
+}
+
 // src/ui/index.tsx
-var prefix = "opencode-moyu:";
+var prefix2 = "opencode-moyu:";
 var pluginRoot = resolve3(dirname3(fileURLToPath(import.meta.url)), "..");
 var tui = async (api, options) => {
   const configuredRows = Number(options?.rows);
@@ -578,17 +1236,18 @@ var tui = async (api, options) => {
   });
   await library.ready();
   const collect = api.moyu?.collect;
-  const [visible, setVisible] = createSignal(true);
-  const [book, setBook] = createSignal();
-  const [offset, setOffset] = createSignal(0);
-  const [height, setHeight] = createSignal(api.renderer.height);
-  const [width, setWidth] = createSignal(api.renderer.width);
-  const [bodyWidth, setBodyWidth] = createSignal(36);
-  const [busy, setBusy] = createSignal(false);
-  const [heightPercent, setHeightPercent] = createSignal();
-  const [widthPercent, setWidthPercent] = createSignal();
-  const [viewportHeight, setViewportHeight] = createSignal();
-  const [hostRows, setHostRows] = createSignal(0);
+  const [visible, setVisible] = createSignal2(true);
+  const [mode, setMode] = createSignal2("novel");
+  const [book, setBook] = createSignal2();
+  const [offset, setOffset] = createSignal2(0);
+  const [height, setHeight] = createSignal2(api.renderer.height);
+  const [width, setWidth] = createSignal2(api.renderer.width);
+  const [bodyWidth, setBodyWidth] = createSignal2(36);
+  const [busy, setBusy] = createSignal2(false);
+  const [heightPercent, setHeightPercent] = createSignal2();
+  const [widthPercent, setWidthPercent] = createSignal2();
+  const [viewportHeight, setViewportHeight] = createSignal2();
+  const [hostRows, setHostRows] = createSignal2(0);
   const onboarding = createMemo(() => options?.hostMajor === 2 || !api.kv.get("dismissed_getting_started", false) && !api.state.provider.some((provider) => provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost?.input !== 0)));
   const chromeRows = () => height() < 40 ? 9 : 12;
   const minimumRows = () => options?.hostMajor !== 2 && height() < 40 ? 2 : 4;
@@ -600,7 +1259,7 @@ var tui = async (api, options) => {
   let request = 0;
   let ownsDialog = false;
   let started = false;
-  const progressKey = (path) => prefix + "position:" + createHash3("sha256").update(path).digest("hex");
+  const progressKey = (path) => prefix2 + "position:" + createHash3("sha256").update(path).digest("hex");
   function save() {
     const current = book();
     if (current) api.kv.set(progressKey(current.path), offset());
@@ -623,6 +1282,20 @@ var tui = async (api, options) => {
       ownsDialog = false;
     });
   }
+  const video = createVideoReader(api, library, {
+    columns: bodyWidth,
+    rows,
+    active: () => mode() === "video" && visible() && api.route.current.name === "session",
+    activate: () => selectMode("video"),
+    dialog,
+    close: closeDialog
+  });
+  function selectMode(next) {
+    save();
+    setMode(next);
+    api.kv.set(prefix2 + "mode", next);
+    if (next === "video") void video.restore().catch((error) => toast(String(error), "error"));
+  }
   async function open2(path, quiet = false) {
     const token = ++request;
     setBusy(true);
@@ -636,10 +1309,11 @@ var tui = async (api, options) => {
       const stored = api.kv.get(progressKey(next.path), 0);
       setOffset(Number.isFinite(stored) ? Math.max(0, Math.min(stored, next.text.length - 1)) : 0);
       setBook(next);
-      api.kv.set(prefix + "last", next.path);
+      api.kv.set(prefix2 + "last", next.path);
       if (!quiet) {
+        selectMode("novel");
         setVisible(true);
-        api.kv.set(prefix + "visible", true);
+        api.kv.set(prefix2 + "visible", true);
         if (api.route.current.name !== "session") toast("\u5DF2\u6253\u5F00\uFF0C\u8FDB\u5165\u4F1A\u8BDD\u540E\u53EF\u5728\u53F3\u4FA7\u680F\u9605\u8BFB");
       }
     } catch (error) {
@@ -649,6 +1323,10 @@ var tui = async (api, options) => {
     }
   }
   function turn(direction) {
+    if (mode() === "video") {
+      video.seek(direction * 10);
+      return;
+    }
     if (!book() || busy()) return;
     const next = Math.max(0, Math.min(pages().length - 1, page() + direction));
     setOffset(pages()[next].start);
@@ -657,12 +1335,12 @@ var tui = async (api, options) => {
   function toggle() {
     const next = !visible();
     setVisible(next);
-    api.kv.set(prefix + "visible", next);
+    api.kv.set(prefix2 + "visible", next);
     if (!next && ownsDialog) closeDialog();
     if (next && api.route.current.name !== "session") toast("\u9605\u8BFB\u9762\u677F\u4F4D\u4E8E\u4F1A\u8BDD\u53F3\u4FA7\u680F\uFF1B\u8FDB\u5165\u4F1A\u8BDD\u540E\u663E\u793A");
   }
   function promptFile() {
-    dialog(() => _$createComponent(api.ui.DialogPrompt, {
+    dialog(() => _$createComponent2(api.ui.DialogPrompt, {
       title: "\u6253\u5F00\u5C0F\u8BF4 \xB7 \u672C\u5730 TXT / Markdown",
       placeholder: "/mnt/d/books/\u5C0F\u8BF4.txt \u6216 ~/books/\u5C0F\u8BF4.txt",
       onCancel: closeDialog,
@@ -673,7 +1351,7 @@ var tui = async (api, options) => {
     }));
   }
   function promptCollection() {
-    dialog(() => _$createComponent(api.ui.DialogPrompt, {
+    dialog(() => _$createComponent2(api.ui.DialogPrompt, {
       title: "\u8BA9\u5F53\u524D\u6A21\u578B\u91C7\u96C6\u5C0F\u8BF4",
       placeholder: "\u4F8B\u5982\uFF1A\u5FD8\u8BED\u7684\u51E1\u4EBA\u4FEE\u4ED9\u4F20\uFF0C\u5148\u91C7\u96C620\u7AE0\uFF1B\u4E5F\u53EF\u8F93\u5165\u76EE\u5F55\u94FE\u63A5",
       onCancel: closeDialog,
@@ -689,7 +1367,7 @@ var tui = async (api, options) => {
         keyFile
       });
       if (api.lifecycle.signal.aborted) return;
-      dialog(() => _$createComponent(api.ui.DialogSelect, {
+      dialog(() => _$createComponent2(api.ui.DialogSelect, {
         title: "\u4E66\u67B6 \xB7 \u6478\u9C7C\u9605\u8BFB",
         placeholder: "\u641C\u7D22\u4E66\u540D\uFF0C\u6216\u9009\u62E9\u91C7\u96C6 / \u6253\u5F00\u672C\u5730\u6587\u4EF6",
         get options() {
@@ -720,19 +1398,23 @@ var tui = async (api, options) => {
   }
   function openMoyu() {
     setVisible(true);
-    api.kv.set(prefix + "visible", true);
-    return shelf();
+    api.kv.set(prefix2 + "visible", true);
+    return mode() === "video" ? video.shelf() : shelf();
   }
   function chapters() {
+    if (mode() !== "novel") selectMode("novel");
     const current = book();
     if (!current) return promptFile();
     const items = current.chapters.length ? current.chapters : chaptersOf(current.text);
     if (!items.length) return toast("\u6CA1\u6709\u8BC6\u522B\u5230\u7AE0\u8282\u6807\u9898\uFF0C\u53EF\u7528\u300C\u8DF3\u8F6C\u8FDB\u5EA6\u300D\u5B9A\u4F4D");
-    dialog(() => _$createComponent(api.ui.DialogSelect, {
+    dialog(() => _$createComponent2(api.ui.DialogSelect, {
       get title() {
         return `${current.title} \xB7 \u76EE\u5F55`;
       },
       placeholder: "\u641C\u7D22\u7AE0\u8282",
+      get current() {
+        return (items.findLast((item) => item.offset <= offset()) ?? items[0]).offset;
+      },
       get options() {
         return items.map((item) => ({
           title: item.title,
@@ -747,8 +1429,9 @@ var tui = async (api, options) => {
     }));
   }
   function jump() {
+    if (mode() === "video") return video.jump();
     if (!book()) return promptFile();
-    dialog(() => _$createComponent(api.ui.DialogPrompt, {
+    dialog(() => _$createComponent2(api.ui.DialogPrompt, {
       title: "\u8DF3\u8F6C\u9605\u8BFB\u8FDB\u5EA6 \xB7 \u8F93\u5165 0\u2013100",
       placeholder: "\u4F8B\u5982 35 \u6216 35%",
       onCancel: closeDialog,
@@ -763,11 +1446,11 @@ var tui = async (api, options) => {
   }
   function setSize(percent) {
     setHeightPercent(percent);
-    api.kv.set(prefix + "heightPercent", percent ?? null);
+    api.kv.set(prefix2 + "heightPercent", percent ?? null);
     save();
   }
   function customSize() {
-    dialog(() => _$createComponent(api.ui.DialogPrompt, {
+    dialog(() => _$createComponent2(api.ui.DialogPrompt, {
       title: "\u9605\u8BFB\u533A\u9AD8\u5EA6 \xB7 \u8F93\u5165 10\u2013100%",
       placeholder: "\u4F8B\u5982 75\uFF0C\u6309\u53EF\u7528\u6B63\u6587\u9AD8\u5EA6\u8BA1\u7B97",
       onCancel: closeDialog,
@@ -781,7 +1464,7 @@ var tui = async (api, options) => {
   }
   function heightSize() {
     const selected = heightPercent() === void 0 ? "auto" : String(heightPercent());
-    dialog(() => _$createComponent(api.ui.DialogSelect, {
+    dialog(() => _$createComponent2(api.ui.DialogSelect, {
       title: "\u9605\u8BFB\u533A\u9AD8\u5EA6",
       placeholder: "\u70B9\u51FB\u9009\u62E9\u9AD8\u5EA6\uFF0C\u8BBE\u7F6E\u81EA\u52A8\u4FDD\u5B58",
       get options() {
@@ -809,7 +1492,7 @@ var tui = async (api, options) => {
   }
   function widthSize() {
     const selected = widthPercent() === void 0 ? "auto" : String(widthPercent());
-    dialog(() => _$createComponent(api.ui.DialogSelect, {
+    dialog(() => _$createComponent2(api.ui.DialogSelect, {
       title: "\u9605\u8BFB\u533A\u5BBD\u5EA6",
       placeholder: "\u70B9\u51FB\u9009\u62E9\u4FA7\u680F\u5BBD\u5EA6\uFF0C\u6309\u4F1A\u8BDD\u53EF\u7528\u5BBD\u5EA6\u8BA1\u7B97",
       get options() {
@@ -828,13 +1511,13 @@ var tui = async (api, options) => {
         closeDialog();
         const percent = item.value === "auto" ? void 0 : Number(item.value);
         setWidthPercent(percent);
-        api.kv.set(prefix + "widthPercent", percent ?? null);
+        api.kv.set(prefix2 + "widthPercent", percent ?? null);
         save();
       }
     }));
   }
   function size() {
-    dialog(() => _$createComponent(api.ui.DialogSelect, {
+    dialog(() => _$createComponent2(api.ui.DialogSelect, {
       title: "\u9605\u8BFB\u533A\u57DF\u5927\u5C0F",
       placeholder: "\u70B9\u51FB\u9009\u62E9\u8981\u8C03\u6574\u7684\u5C3A\u5BF8",
       get options() {
@@ -861,23 +1544,24 @@ var tui = async (api, options) => {
   let refresh;
   const watcher = watch(booksDir, (_event, filename) => {
     const current = book();
-    if (!current || filename?.toString() !== basename2(current.path)) return;
+    if (!current || filename?.toString() !== basename3(current.path)) return;
     clearTimeout(refresh);
     refresh = setTimeout(() => {
       if (api.lifecycle.signal.aborted || book()?.path !== current.path) return;
-      void access(current.path).then(() => open2(current.path, true)).catch((error) => {
+      void access2(current.path).then(() => open2(current.path, true)).catch((error) => {
         if (error.code !== "ENOENT" || api.lifecycle.signal.aborted || book()?.path !== current.path) return;
         setBook(void 0);
         setOffset(0);
         api.kv.set(progressKey(current.path), 0);
-        api.kv.set(prefix + "last", "");
+        api.kv.set(prefix2 + "last", "");
       });
     }, 100);
   });
   function removeBook() {
+    if (mode() === "video") return video.remove();
     const current = book();
     if (!current?.resourceId) return toast("\u8BF7\u5148\u5728\u4E66\u67B6\u6253\u5F00\u8981\u5220\u9664\u7684\u5C0F\u8BF4");
-    dialog(() => _$createComponent(api.ui.DialogConfirm, {
+    dialog(() => _$createComponent2(api.ui.DialogConfirm, {
       title: "\u4ECE\u8D44\u6599\u5E93\u5220\u9664",
       get message() {
         return `\u5220\u9664\u300A${current.title}\u300B\u7684\u52A0\u5BC6\u526F\u672C\u548C\u91C7\u96C6\u7F13\u5B58\uFF1F\u5916\u90E8\u539F\u6587\u4EF6\u4FDD\u7559\u3002`;
@@ -889,7 +1573,7 @@ var tui = async (api, options) => {
           if (api.lifecycle.signal.aborted) return;
           api.kv.set(progressKey(current.path), 0);
           if (book()?.path === current.path) {
-            api.kv.set(prefix + "last", "");
+            api.kv.set(prefix2 + "last", "");
             setBook(void 0);
             setOffset(0);
           }
@@ -904,18 +1588,20 @@ var tui = async (api, options) => {
     watcher.close();
     clearTimeout(refresh);
     save();
+    video.dispose();
     api.renderer.off("resize", resize);
     if (ownsDialog) closeDialog();
   });
-  createEffect(() => {
+  createEffect2(() => {
     if (!api.kv.ready || started) return;
     started = true;
-    const savedSize = Number(api.kv.get(prefix + "heightPercent", null));
+    const savedSize = Number(api.kv.get(prefix2 + "heightPercent", null));
     if (Number.isFinite(savedSize) && savedSize >= 10 && savedSize <= 100) setHeightPercent(savedSize);
-    const savedWidth = Number(api.kv.get(prefix + "widthPercent", null));
+    const savedWidth = Number(api.kv.get(prefix2 + "widthPercent", null));
     if (Number.isFinite(savedWidth) && savedWidth >= 20 && savedWidth <= 60) setWidthPercent(savedWidth);
-    setVisible(api.kv.get(prefix + "visible", true));
-    const initial = typeof options?.file === "string" ? options.file : api.kv.get(prefix + "last", "");
+    setVisible(api.kv.get(prefix2 + "visible", true));
+    if (api.kv.get(prefix2 + "mode", "novel") === "video") selectMode("video");
+    const initial = typeof options?.file === "string" ? options.file : api.kv.get(prefix2 + "last", "");
     void open2(initial || resolve3(pluginRoot, "books/\u591C\u73ED\u4FBF\u5229\u5E97.txt"), true);
   });
   api.keymap.registerLayer({
@@ -939,6 +1625,15 @@ var tui = async (api, options) => {
       title: "\u6478\u9C7C\u9605\u8BFB\uFF1A\u6253\u5F00\u4E66\u67B6",
       slashName: "moyu",
       run: openMoyu
+    }, {
+      name: "moyu.video",
+      title: "\u6478\u9C7C\u89C6\u9891\uFF1A\u6253\u5F00\u89C6\u9891\u5E93",
+      slashName: "video",
+      run: () => {
+        selectMode("video");
+        setVisible(true);
+        return video.shelf();
+      }
     }, {
       name: "moyu.shelf",
       title: "\u6478\u9C7C\u9605\u8BFB\uFF1A\u4E66\u67B6 / \u6253\u5F00\u6587\u4EF6",
@@ -1012,7 +1707,7 @@ var tui = async (api, options) => {
     let readerNode;
     let docking;
     let mountTimer;
-    const [layout, setLayout] = createSignal();
+    const [layout, setLayout] = createSignal2();
     const measure = () => {
       if (viewport && !viewport.isDestroyed && Number.isFinite(viewport.height) && viewport.height > 0) setViewportHeight(viewport.height);
     };
@@ -1020,7 +1715,7 @@ var tui = async (api, options) => {
     const frameResized = () => queueMicrotask(() => {
       if (!api.lifecycle.signal.aborted) applyWidth();
     });
-    createEffect(applyWidth);
+    createEffect2(applyWidth);
     const dock = () => {
       if (options?.hostMajor !== 2 || api.lifecycle.signal.aborted) return;
       measure();
@@ -1028,7 +1723,7 @@ var tui = async (api, options) => {
       setHostRows(docking?.measure(visible()) ?? 0);
       if (!visible()) docking = void 0;
     };
-    createEffect(dock);
+    createEffect2(dock);
     api.renderer.on("frame", dock);
     onMount(() => {
       mountTimer = setTimeout(() => {
@@ -1054,6 +1749,7 @@ var tui = async (api, options) => {
       }
     }
     onCleanup(() => {
+      video.pause();
       clearTimeout(mountTimer);
       viewport?.off("resized", measure);
       layout()?.frame?.off("resized", frameResized);
@@ -1077,96 +1773,117 @@ var tui = async (api, options) => {
         });
       };
       return (() => {
-        var _el$ = _$createElement("text");
-        _$setProp(_el$, "selectable", false);
-        _$setProp(_el$, "wrapMode", "none");
-        _$setProp(_el$, "onMouseDown", (event) => {
+        var _el$ = _$createElement2("text");
+        _$setProp2(_el$, "selectable", false);
+        _$setProp2(_el$, "wrapMode", "none");
+        _$setProp2(_el$, "onMouseDown", (event) => {
           if (event.button === 0) {
             pressed = true;
             event.preventDefault();
             event.stopPropagation();
           }
         });
-        _$setProp(_el$, "onMouseOut", () => {
+        _$setProp2(_el$, "onMouseOut", () => {
           pressed = false;
         });
-        _$setProp(_el$, "onMouseDrag", () => {
+        _$setProp2(_el$, "onMouseDrag", () => {
           pressed = false;
         });
-        _$setProp(_el$, "onMouseUp", click);
-        _$insert(_el$, () => props.label);
-        _$effect((_$p) => _$setProp(_el$, "fg", props.muted ? theme().textMuted : theme().primary, _$p));
+        _$setProp2(_el$, "onMouseUp", click);
+        _$insert2(_el$, () => props.label);
+        _$effect2((_$p) => _$setProp2(_el$, "fg", props.muted ? theme().textMuted : theme().primary, _$p));
         return _el$;
       })();
     }
-    return _$createComponent(Show, {
+    return _$createComponent2(Show2, {
       get when() {
         return visible();
       },
       get fallback() {
         return (() => {
-          var _el$15 = _$createElement("box");
-          _$setProp(_el$15, "height", 1);
-          _$insert(_el$15, _$createComponent(Button, {
+          var _el$16 = _$createElement2("box");
+          _$setProp2(_el$16, "height", 1);
+          _$insert2(_el$16, _$createComponent2(Button, {
             label: "[\u663E\u793A\u9605\u8BFB]",
             action: toggle
           }));
-          return _el$15;
+          return _el$16;
         })();
       },
       get children() {
-        var _el$2 = _$createElement("box"), _el$3 = _$createElement("box"), _el$4 = _$createElement("text"), _el$5 = _$createElement("b"), _el$7 = _$createElement("box"), _el$8 = _$createElement("box");
-        _$insertNode(_el$2, _el$3);
-        _$insertNode(_el$2, _el$7);
-        _$insertNode(_el$2, _el$8);
+        var _el$2 = _$createElement2("box"), _el$3 = _$createElement2("box"), _el$4 = _$createElement2("text"), _el$5 = _$createElement2("b"), _el$7 = _$createElement2("box"), _el$8 = _$createElement2("box"), _el$9 = _$createElement2("box");
+        _$insertNode2(_el$2, _el$3);
+        _$insertNode2(_el$2, _el$8);
+        _$insertNode2(_el$2, _el$9);
         _$use((node) => {
           readerNode = node;
         }, _el$2);
-        _$setProp(_el$2, "flexShrink", 0);
-        _$setProp(_el$2, "width", "100%");
-        _$setProp(_el$2, "onSizeChange", function() {
+        _$setProp2(_el$2, "flexShrink", 0);
+        _$setProp2(_el$2, "width", "100%");
+        _$setProp2(_el$2, "onSizeChange", function() {
           readerNode = this;
           setBodyWidth(Math.max(2, Math.floor(this.width)));
           observe(this);
           dock();
         });
-        _$insertNode(_el$3, _el$4);
-        _$setProp(_el$3, "flexShrink", 0);
-        _$setProp(_el$3, "height", 1);
-        _$setProp(_el$3, "flexDirection", "row");
-        _$setProp(_el$3, "justifyContent", "space-between");
-        _$insertNode(_el$4, _el$5);
-        _$insertNode(_el$5, _$createTextNode(`\u968F\u624B\u8BFB`));
-        _$insert(_el$3, _$createComponent(Button, {
+        _$insertNode2(_el$3, _el$4);
+        _$insertNode2(_el$3, _el$7);
+        _$setProp2(_el$3, "flexShrink", 0);
+        _$setProp2(_el$3, "height", 1);
+        _$setProp2(_el$3, "flexDirection", "row");
+        _$setProp2(_el$3, "justifyContent", "space-between");
+        _$insertNode2(_el$4, _el$5);
+        _$insertNode2(_el$5, _$createTextNode2(`\u968F\u624B\u8BFB`));
+        _$setProp2(_el$7, "flexDirection", "row");
+        _$setProp2(_el$7, "gap", 1);
+        _$insert2(_el$7, _$createComponent2(Button, {
+          label: "[\u5C0F\u8BF4]",
+          action: () => selectMode("novel"),
+          get muted() {
+            return mode() !== "novel";
+          }
+        }), null);
+        _$insert2(_el$7, _$createComponent2(Button, {
+          label: "[\u89C6\u9891]",
+          action: () => selectMode("video"),
+          get muted() {
+            return mode() !== "video";
+          }
+        }), null);
+        _$insert2(_el$7, _$createComponent2(Button, {
           label: "[\u9690\u85CF]",
           action: toggle,
           muted: true
         }), null);
-        _$setProp(_el$7, "flexShrink", 0);
-        _$setProp(_el$7, "height", 1);
-        _$setProp(_el$7, "flexDirection", "row");
-        _$setProp(_el$7, "gap", 2);
-        _$insert(_el$7, _$createComponent(Button, {
-          label: "[\u4E66\u67B6]",
-          action: shelf
+        _$setProp2(_el$8, "flexShrink", 0);
+        _$setProp2(_el$8, "height", 1);
+        _$setProp2(_el$8, "flexDirection", "row");
+        _$setProp2(_el$8, "gap", 2);
+        _$insert2(_el$8, _$createComponent2(Button, {
+          get label() {
+            return mode() === "video" ? "[\u89C6\u9891\u5E93]" : "[\u4E66\u67B6]";
+          },
+          action: () => mode() === "video" ? video.shelf() : shelf()
         }), null);
-        _$insert(_el$7, _$createComponent(Button, {
-          label: "[\u76EE\u5F55]",
-          action: chapters
+        _$insert2(_el$8, _$createComponent2(Button, {
+          get label() {
+            return mode() === "video" ? "[\u8DF3\u8F6C]" : "[\u76EE\u5F55]";
+          },
+          action: () => mode() === "video" ? video.jump() : chapters()
         }), null);
-        _$insert(_el$7, _$createComponent(Button, {
+        _$insert2(_el$8, _$createComponent2(Button, {
           label: "[\u5220\u9664]",
           action: removeBook
         }), null);
-        _$setProp(_el$8, "flexShrink", 0);
-        _$setProp(_el$8, "flexDirection", "row");
-        _$setProp(_el$8, "gap", 2);
-        _$insert(_el$8, _$createComponent(Show, {
+        _$setProp2(_el$9, "flexShrink", 0);
+        _$setProp2(_el$9, "flexDirection", "row");
+        _$setProp2(_el$9, "gap", 2);
+        _$insert2(_el$9, _$createComponent2(Show2, {
           get when() {
             return options?.hostMajor === 2;
           },
           get children() {
-            return _$createComponent(Button, {
+            return _$createComponent2(Button, {
               get label() {
                 return `[\u5BBD\u5EA6 ${widthPercent() ?? "\u81EA\u52A8"}${widthPercent() === void 0 ? "" : "%"}]`;
               },
@@ -1174,116 +1891,131 @@ var tui = async (api, options) => {
             });
           }
         }), null);
-        _$insert(_el$8, _$createComponent(Button, {
+        _$insert2(_el$9, _$createComponent2(Button, {
           get label() {
             return `[\u9AD8\u5EA6 ${heightPercent() ?? "\u81EA\u52A8"}${heightPercent() === void 0 ? "" : "%"}]`;
           },
           action: heightSize
         }), null);
-        _$insert(_el$2, _$createComponent(Show, {
+        _$insert2(_el$2, _$createComponent2(Show2, {
           get when() {
-            return book();
+            return mode() === "novel";
           },
           get fallback() {
-            return _$createComponent(Button, {
-              get label() {
-                return busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "[\u70B9\u51FB\u6253\u5F00\u672C\u5730\u5C0F\u8BF4]";
-              },
-              action: shelf
+            return _$createComponent2(video.View, {
+              Button,
+              get gap() {
+                return gap();
+              }
             });
           },
           get children() {
-            return [(() => {
-              var _el$9 = _$createElement("box");
-              _$setProp(_el$9, "flexShrink", 0);
-              _$insert(_el$9, _$createComponent(Button, {
-                get label() {
-                  return book()?.title ?? "";
-                },
-                action: shelf,
-                muted: true
-              }), null);
-              _$insert(_el$9, _$createComponent(Button, {
-                get label() {
-                  return currentChapter();
-                },
-                action: chapters
-              }), null);
-              _$effect((_$p) => _$setProp(_el$9, "height", 2 + gap(), _$p));
-              return _el$9;
-            })(), (() => {
-              var _el$0 = _$createElement("box"), _el$1 = _$createElement("text");
-              _$insertNode(_el$0, _el$1);
-              _$setProp(_el$0, "flexShrink", 0);
-              _$setProp(_el$1, "width", "100%");
-              _$setProp(_el$1, "height", "100%");
-              _$setProp(_el$1, "wrapMode", "none");
-              _$insert(_el$1, () => pages()[page()].text);
-              _$effect((_p$) => {
-                var _v$ = rows(), _v$2 = rows(), _v$3 = theme().text;
-                _v$ !== _p$.e && (_p$.e = _$setProp(_el$0, "height", _v$, _p$.e));
-                _v$2 !== _p$.t && (_p$.t = _$setProp(_el$0, "minHeight", _v$2, _p$.t));
-                _v$3 !== _p$.a && (_p$.a = _$setProp(_el$1, "fg", _v$3, _p$.a));
-                return _p$;
-              }, {
-                e: void 0,
-                t: void 0,
-                a: void 0
-              });
-              return _el$0;
-            })(), (() => {
-              var _el$10 = _$createElement("box"), _el$11 = _$createElement("box"), _el$12 = _$createElement("box"), _el$13 = _$createElement("text");
-              _$insertNode(_el$10, _el$11);
-              _$insertNode(_el$10, _el$12);
-              _$insertNode(_el$10, _el$13);
-              _$setProp(_el$10, "flexShrink", 0);
-              _$setProp(_el$11, "flexShrink", 0);
-              _$setProp(_el$11, "height", 1);
-              _$setProp(_el$11, "flexDirection", "row");
-              _$setProp(_el$11, "justifyContent", "space-between");
-              _$insert(_el$11, _$createComponent(Button, {
-                get label() {
-                  return `${page() + 1} / ${pages().length} \u9875 \xB7 ${percentage()}%`;
-                },
-                action: jump,
-                muted: true
-              }));
-              _$setProp(_el$12, "flexShrink", 0);
-              _$setProp(_el$12, "height", 1);
-              _$setProp(_el$12, "flexDirection", "row");
-              _$setProp(_el$12, "justifyContent", "space-between");
-              _$insert(_el$12, _$createComponent(Button, {
-                label: "[\u2039 \u4E0A\u4E00\u9875]",
-                action: () => turn(-1)
-              }), null);
-              _$insert(_el$12, _$createComponent(Button, {
-                label: "[\u4E0B\u4E00\u9875 \u203A]",
-                action: () => turn(1)
-              }), null);
-              _$insertNode(_el$13, _$createTextNode(`\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u8C03\u6574\u5BBD\u9AD8`));
-              _$setProp(_el$13, "height", 1);
-              _$setProp(_el$13, "wrapMode", "none");
-              _$effect((_p$) => {
-                var _v$4 = 4 + gap(), _v$5 = gap(), _v$6 = theme().textMuted;
-                _v$4 !== _p$.e && (_p$.e = _$setProp(_el$10, "height", _v$4, _p$.e));
-                _v$5 !== _p$.t && (_p$.t = _$setProp(_el$10, "paddingTop", _v$5, _p$.t));
-                _v$6 !== _p$.a && (_p$.a = _$setProp(_el$13, "fg", _v$6, _p$.a));
-                return _p$;
-              }, {
-                e: void 0,
-                t: void 0,
-                a: void 0
-              });
-              return _el$10;
-            })()];
+            return _$createComponent2(Show2, {
+              get when() {
+                return book();
+              },
+              get fallback() {
+                return _$createComponent2(Button, {
+                  get label() {
+                    return busy() ? "\u6B63\u5728\u6253\u5F00\u2026" : "[\u70B9\u51FB\u6253\u5F00\u672C\u5730\u5C0F\u8BF4]";
+                  },
+                  action: shelf
+                });
+              },
+              get children() {
+                return [(() => {
+                  var _el$0 = _$createElement2("box");
+                  _$setProp2(_el$0, "flexShrink", 0);
+                  _$insert2(_el$0, _$createComponent2(Button, {
+                    get label() {
+                      return book()?.title ?? "";
+                    },
+                    action: shelf,
+                    muted: true
+                  }), null);
+                  _$insert2(_el$0, _$createComponent2(Button, {
+                    get label() {
+                      return currentChapter();
+                    },
+                    action: chapters
+                  }), null);
+                  _$effect2((_$p) => _$setProp2(_el$0, "height", 2 + gap(), _$p));
+                  return _el$0;
+                })(), (() => {
+                  var _el$1 = _$createElement2("box"), _el$10 = _$createElement2("text");
+                  _$insertNode2(_el$1, _el$10);
+                  _$setProp2(_el$1, "flexShrink", 0);
+                  _$setProp2(_el$10, "width", "100%");
+                  _$setProp2(_el$10, "height", "100%");
+                  _$setProp2(_el$10, "wrapMode", "none");
+                  _$insert2(_el$10, () => pages()[page()].text);
+                  _$effect2((_p$) => {
+                    var _v$ = rows(), _v$2 = rows(), _v$3 = theme().text;
+                    _v$ !== _p$.e && (_p$.e = _$setProp2(_el$1, "height", _v$, _p$.e));
+                    _v$2 !== _p$.t && (_p$.t = _$setProp2(_el$1, "minHeight", _v$2, _p$.t));
+                    _v$3 !== _p$.a && (_p$.a = _$setProp2(_el$10, "fg", _v$3, _p$.a));
+                    return _p$;
+                  }, {
+                    e: void 0,
+                    t: void 0,
+                    a: void 0
+                  });
+                  return _el$1;
+                })(), (() => {
+                  var _el$11 = _$createElement2("box"), _el$12 = _$createElement2("box"), _el$13 = _$createElement2("box"), _el$14 = _$createElement2("text");
+                  _$insertNode2(_el$11, _el$12);
+                  _$insertNode2(_el$11, _el$13);
+                  _$insertNode2(_el$11, _el$14);
+                  _$setProp2(_el$11, "flexShrink", 0);
+                  _$setProp2(_el$12, "flexShrink", 0);
+                  _$setProp2(_el$12, "height", 1);
+                  _$setProp2(_el$12, "flexDirection", "row");
+                  _$setProp2(_el$12, "justifyContent", "space-between");
+                  _$insert2(_el$12, _$createComponent2(Button, {
+                    get label() {
+                      return `${page() + 1} / ${pages().length} \u9875 \xB7 ${percentage()}%`;
+                    },
+                    action: jump,
+                    muted: true
+                  }));
+                  _$setProp2(_el$13, "flexShrink", 0);
+                  _$setProp2(_el$13, "height", 1);
+                  _$setProp2(_el$13, "flexDirection", "row");
+                  _$setProp2(_el$13, "justifyContent", "space-between");
+                  _$insert2(_el$13, _$createComponent2(Button, {
+                    label: "[\u2039 \u4E0A\u4E00\u9875]",
+                    action: () => turn(-1)
+                  }), null);
+                  _$insert2(_el$13, _$createComponent2(Button, {
+                    label: "[\u4E0B\u4E00\u9875 \u203A]",
+                    action: () => turn(1)
+                  }), null);
+                  _$insertNode2(_el$14, _$createTextNode2(`\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u8C03\u6574\u5BBD\u9AD8`));
+                  _$setProp2(_el$14, "height", 1);
+                  _$setProp2(_el$14, "wrapMode", "none");
+                  _$effect2((_p$) => {
+                    var _v$4 = 4 + gap(), _v$5 = gap(), _v$6 = theme().textMuted;
+                    _v$4 !== _p$.e && (_p$.e = _$setProp2(_el$11, "height", _v$4, _p$.e));
+                    _v$5 !== _p$.t && (_p$.t = _$setProp2(_el$11, "paddingTop", _v$5, _p$.t));
+                    _v$6 !== _p$.a && (_p$.a = _$setProp2(_el$14, "fg", _v$6, _p$.a));
+                    return _p$;
+                  }, {
+                    e: void 0,
+                    t: void 0,
+                    a: void 0
+                  });
+                  return _el$11;
+                })()];
+              }
+            });
           }
         }), null);
-        _$effect((_p$) => {
-          var _v$7 = options?.hostMajor === 2 ? "auto" : 0, _v$8 = book() ? rows() + chromeRows() : void 0, _v$9 = theme().text, _v$0 = 1 + gap();
-          _v$7 !== _p$.e && (_p$.e = _$setProp(_el$2, "marginBottom", _v$7, _p$.e));
-          _v$8 !== _p$.t && (_p$.t = _$setProp(_el$2, "height", _v$8, _p$.t));
-          _v$9 !== _p$.a && (_p$.a = _$setProp(_el$4, "fg", _v$9, _p$.a));
-          _v$0 !== _p$.o && (_p$.o = _$setProp(_el$8, "height", _v$0, _p$.o));
+        _$effect2((_p$) => {
+          var _v$7 = options?.hostMajor === 2 ? "auto" : 0, _v$8 = book() || mode() === "video" ? rows() + chromeRows() : void 0, _v$9 = theme().text, _v$0 = 1 + gap();
+          _v$7 !== _p$.e && (_p$.e = _$setProp2(_el$2, "marginBottom", _v$7, _p$.e));
+          _v$8 !== _p$.t && (_p$.t = _$setProp2(_el$2, "height", _v$8, _p$.t));
+          _v$9 !== _p$.a && (_p$.a = _$setProp2(_el$4, "fg", _v$9, _p$.a));
+          _v$0 !== _p$.o && (_p$.o = _$setProp2(_el$9, "height", _v$0, _p$.o));
           return _p$;
         }, {
           e: void 0,
@@ -1298,7 +2030,7 @@ var tui = async (api, options) => {
   api.slots.register({
     order: 50,
     slots: {
-      sidebar_content: () => _$createComponent(Reader, {})
+      sidebar_content: () => _$createComponent2(Reader, {})
     }
   });
 };
