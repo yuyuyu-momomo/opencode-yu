@@ -77,6 +77,43 @@ test("播放默认无音频进程，开声后静音和暂停均终止旧进程�
 
 let ffmpeg
 try { ffmpeg = await mediaBinary("ffmpeg"); await mediaBinary("ffprobe") } catch {}
+
+test("输出尺寸不变时不重启解码，切换画质仍能重解码，过期帧回调不再排队", async () => {
+  let launches = 0, frames = 0
+  const player = new PixelPlayer({binary:async()=>"ffmpeg",frameSize:()=>({width:2,height:2}),onFrame:()=>{frames++;player.pause()},launch:()=>{
+    launches++
+    const child = new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.exitCode=null
+    child.kill=(signal)=>{child.signalCode=signal;child.emit("close",null)}
+    queueMicrotask(()=>child.stdout.write(Buffer.alloc(120)))
+    return child
+  }})
+  try {
+    await player.load({path:"fixture.mp4",width:2,height:2,duration:20})
+    await until(()=>frames===1)
+    await player.resize(50,20);assert.equal(launches,1)
+    await player.resize(50,20,"lanczos");await until(()=>frames===2);assert.equal(launches,2)
+    await sleep(150);assert.equal(frames,2)
+    await player.resize(50,20,"lanczos",true);await until(()=>frames===3)
+  } finally {player.dispose()}
+})
+
+test("渲染阻塞后不以毫秒间隔追赶旧帧挤占交互", async () => {
+  const times=[]
+  const player=new PixelPlayer({binary:async()=>"ffmpeg",frameSize:()=>({width:2,height:2}),onFrame:()=>{
+    times.push(performance.now())
+    if(times.length===2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,250)
+  },launch:()=>{
+    const child=new EventEmitter();child.stdout=new PassThrough();child.stderr=new PassThrough();child.exitCode=null
+    child.kill=(signal)=>{child.signalCode=signal;child.emit("close",null)}
+    queueMicrotask(()=>child.stdout.write(Buffer.alloc(1200)));return child
+  }})
+  try {
+    player.video={path:"fixture.mp4",width:2,height:2,duration:30}
+    await player.play();await until(()=>times.length>=5)
+    assert.ok(times[3]-times[2]>=65,JSON.stringify(times))
+    assert.ok(times[4]-times[3]>=65,JSON.stringify(times))
+  } finally {player.dispose()}
+})
 test("真实视频探测、分块解码、暂停跳转及加密索引删除保留原文件", { skip: !ffmpeg }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "moyu-video-")), path = join(dir, "测试 视频.mp4")
   await promisify(execFile)(ffmpeg, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10", "-t", "2", "-c:v", "mpeg4", path])

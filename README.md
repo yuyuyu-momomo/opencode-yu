@@ -1,10 +1,10 @@
 # OpenCode 摸鱼阅读
 
-在 OpenCode 的**原生右侧栏**看小说和视频，适配 OpenCode 2.1.2，兼容 1.19.x。点击顶部「小说 / 视频」切换，终端需要显示会话侧栏；首页没有侧栏。
+在 OpenCode 的**原生右侧栏**看小说和视频，适配 OpenCode 2.1.3，兼容 2.1.2 / 1.19.x。点击顶部「小说 / 视频」切换，终端需要显示会话侧栏；首页没有侧栏。
 
 ## 快速安装
 
-[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.4.0.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
+[下载安装包 ZIP](https://github.com/yuyuyu-momomo/opencode-yu/raw/refs/heads/main/releases/opencode-moyu-v0.4.1.zip)，解压后运行 `bash install.sh`；Windows 原生 OpenCode 可双击 `install.cmd`。
 
 也可直接安装仓库中的预编译版本：
 
@@ -39,6 +39,8 @@ bash install.sh
 按 `Alt+O` 选择「打开本地文件」，输入路径，例如 `/mnt/d/books/三体.txt`。导入会生成加密副本，外部原文件保留。支持 UTF-8、带 BOM 的 UTF-16、GBK / GB18030、Markdown；单本最多 32 MiB。目前不支持 EPUB、PDF。
 
 进度按文件路径分别保存在 OpenCode 自身的插件存储中，翻页及退出时自动保存。宽度或高度变化会按实际正文区域重新分页，保留阅读位置。翻页阅读不调用模型，也不把正文写入对话。
+
+v0.4.1 优化切换开销：同宽度调高度复用已排好的文字行；视频或隐藏状态不重排小说。连续尺寸 / 画质变更合并处理，输出像素尺寸相同时复用当前解码；切走时取消未完成的解密，仍立即清理临时明文。视频帧分块拼接只复制一次，像素模式复用文本节点。
 
 ## 侧栏视频
 
@@ -114,7 +116,7 @@ OpenCode 2.x 中，在输入框提交：
 
 ## 安装与卸载
 
-解压安装包后，运行安装脚本即可。需要 Node.js 22+ 和 OpenCode 2.1.2 / 1.19.x，**不需要 `npm install`、编译或手改配置**。
+解压安装包后，运行安装脚本即可。需要 Node.js 22+ 和 OpenCode 2.1.2–2.1.3 / 1.19.x，**不需要 `npm install`、编译或手改配置**。
 
 ```bash
 bash install.sh

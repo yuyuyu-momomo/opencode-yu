@@ -13718,6 +13718,14 @@ var LibraryStore = class {
     }
     return out;
   }
+  async resource(id) {
+    if (!/^[a-f0-9]{24}$/.test(id)) return;
+    try {
+      return await this.vault.unseal(await readFile2(join(this.internal, "resources", id + ".enc")));
+    } catch (error45) {
+      if (error45.code !== "ENOENT") throw error45;
+    }
+  }
   async readPart(id, index2) {
     return (await this.vault.unseal(await readFile2(this.partPath(id, index2)))).text;
   }
@@ -13846,7 +13854,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.4.0 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
+          headers: { "User-Agent": "OpenCode-Moyu/0.4.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url2.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -20634,13 +20642,14 @@ async function nativeMediaPath(binary, path) {
   if (process.platform !== "win32" && binary.toLowerCase().endsWith(".exe")) return (await execute("wslpath", ["-w", path], { timeout: 5e3 })).stdout.trim();
   return path;
 }
-async function inspectVideo(input, cwd) {
+async function inspectVideo(input, cwd, { signal } = {}) {
+  signal?.throwIfAborted();
   if (/^[a-z]+:\/\//i.test(input.trim())) throw new Error("\u9996\u7248\u652F\u6301\u672C\u5730\u89C6\u9891\uFF0C\u8BF7\u8F93\u5165\u6587\u4EF6\u8DEF\u5F84");
   const path = await realpath2(expandPath(input, cwd));
   const info = await stat2(path);
   if (!info.isFile() || !/\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/i.test(path)) throw new Error("\u8BF7\u9009\u62E9 MP4\u3001MKV\u3001WebM\u3001MOV\u3001AVI \u6216 GIF \u89C6\u9891\u6587\u4EF6");
   const binary = await mediaBinary("ffprobe");
-  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true });
+  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true, signal });
   const data2 = JSON.parse(stdout), video = data2.streams?.find((stream) => stream.codec_type === "video");
   if (!video?.width || !video.height) throw new Error("\u6587\u4EF6\u6CA1\u6709\u53EF\u64AD\u653E\u7684\u89C6\u9891\u8F68\u9053");
   const duration3 = Number(data2.format?.duration);
@@ -20708,7 +20717,9 @@ var MediaCache = class {
       }
     }
   }
-  async open(resource) {
+  /** @param {any} resource @param {{signal?: AbortSignal}} options */
+  async open(resource, { signal } = {}) {
+    signal?.throwIfAborted();
     if (resource.source.adapter === "local-video") return resolveLocalVideo(resource);
     if (resource.kind !== "video" || !resource.metadata.managedMedia) throw new Error("\u89C6\u9891\u5C1A\u672A\u4E0B\u8F7D\uFF0C\u8BF7\u5148\u4ECE\u6765\u6E90\u5BFC\u5165");
     const path = this.path(resource.id), info = await stat3(path);
@@ -20730,10 +20741,13 @@ var MediaCache = class {
       const decipher = createDecipheriv2("aes-256-gcm", await this.library.vault.key(false), header.subarray(8, 20));
       decipher.setAAD(aad2);
       decipher.setAuthTag(header.subarray(20, 36));
-      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }));
-      return { ...await inspectVideo(decoded), id: resource.id, title: resource.title, release };
+      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }), { signal });
+      const video = await inspectVideo(decoded, void 0, { signal });
+      signal?.throwIfAborted();
+      return { ...video, id: resource.id, title: resource.title, release };
     } catch {
       await release();
+      signal?.throwIfAborted();
       throw new Error("\u89C6\u9891\u7F13\u5B58\u65E0\u6CD5\u89E3\u5BC6\u6216\u64AD\u653E\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u53CA\u6587\u4EF6\u5B8C\u6574\u6027\u540E\u91CD\u65B0\u4E0B\u8F7D");
     }
   }

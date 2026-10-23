@@ -1444,6 +1444,14 @@ var LibraryStore = class {
     }
     return out;
   }
+  async resource(id) {
+    if (!/^[a-f0-9]{24}$/.test(id)) return;
+    try {
+      return await this.vault.unseal(await readFile2(join(this.internal, "resources", id + ".enc")));
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   async readPart(id, index) {
     return (await this.vault.unseal(await readFile2(this.partPath(id, index)))).text;
   }
@@ -1563,13 +1571,17 @@ function chaptersOf(text) {
   }
   return chapters;
 }
-function paginate(text, width = 36, rows = 16) {
-  if (!Number.isInteger(width) || width < 2 || !Number.isInteger(rows) || rows < 1) throw new Error("\u5206\u9875\u5C3A\u5BF8\u65E0\u6548");
+function wrapLines(text, width) {
   const lines = [];
+  const widths = /* @__PURE__ */ new Map();
   let line = "", columns = 0, start = 0, offset = 0;
   for (const paragraph of text.split("\n")) {
     for (const { segment } of segmenter2.segment(paragraph)) {
-      const cells = stringWidth(segment);
+      let cells = widths.get(segment);
+      if (cells === void 0) {
+        cells = stringWidth(segment);
+        if (widths.size < 4096) widths.set(segment, cells);
+      }
       if (columns + cells > width && line) {
         lines.push({ text: line, start });
         line = "";
@@ -1586,12 +1598,35 @@ function paginate(text, width = 36, rows = 16) {
     line = "";
     columns = 0;
   }
+  return lines;
+}
+function groupPages(lines, rows) {
   const pages = [];
   for (let index = 0; index < lines.length; index += rows) {
     pages.push({ start: lines[index].start, text: lines.slice(index, index + rows).map((item) => item.text).join("\n") });
   }
   while (pages.length > 1 && !pages.at(-1).text.trim()) pages.pop();
   return pages;
+}
+function validSize(width, rows) {
+  if (!Number.isInteger(width) || width < 2 || !Number.isInteger(rows) || rows < 1) throw new Error("\u5206\u9875\u5C3A\u5BF8\u65E0\u6548");
+}
+function createPaginator() {
+  let previousText, previousWidth, previousRows, lines, pages;
+  return (text, width = 36, rows = 16) => {
+    validSize(width, rows);
+    if (text !== previousText || width !== previousWidth) {
+      lines = wrapLines(text, width);
+      previousText = text;
+      previousWidth = width;
+      previousRows = void 0;
+    }
+    if (rows !== previousRows) {
+      pages = groupPages(lines, rows);
+      previousRows = rows;
+    }
+    return pages;
+  };
 }
 function pageAt(pages, offset) {
   let low = 0, high = pages.length - 1;
@@ -1701,7 +1736,7 @@ import { setProp as _$setProp } from "@opentui/solid";
 import { createElement as _$createElement } from "@opentui/solid";
 import { memo as _$memo } from "@opentui/solid";
 import { createComponent as _$createComponent } from "@opentui/solid";
-import { createEffect, createSignal, For, Show, untrack, onCleanup } from "solid-js";
+import { createEffect, createSignal, Index, Show, untrack, onCleanup } from "solid-js";
 import * as OpenTui from "@opentui/core";
 import { watch } from "node:fs";
 import { access as access3 } from "node:fs/promises";
@@ -1741,13 +1776,14 @@ async function nativeMediaPath(binary, path) {
   if (process.platform !== "win32" && binary.toLowerCase().endsWith(".exe")) return (await execute("wslpath", ["-w", path], { timeout: 5e3 })).stdout.trim();
   return path;
 }
-async function inspectVideo(input, cwd) {
+async function inspectVideo(input, cwd, { signal } = {}) {
+  signal?.throwIfAborted();
   if (/^[a-z]+:\/\//i.test(input.trim())) throw new Error("\u9996\u7248\u652F\u6301\u672C\u5730\u89C6\u9891\uFF0C\u8BF7\u8F93\u5165\u6587\u4EF6\u8DEF\u5F84");
   const path = await realpath2(expandPath(input, cwd));
   const info = await stat2(path);
   if (!info.isFile() || !/\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/i.test(path)) throw new Error("\u8BF7\u9009\u62E9 MP4\u3001MKV\u3001WebM\u3001MOV\u3001AVI \u6216 GIF \u89C6\u9891\u6587\u4EF6");
   const binary = await mediaBinary("ffprobe");
-  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true });
+  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15e3, maxBuffer: 256 * 1024, windowsHide: true, signal });
   const data = JSON.parse(stdout), video = data.streams?.find((stream) => stream.codec_type === "video");
   if (!video?.width || !video.height) throw new Error("\u6587\u4EF6\u6CA1\u6709\u53EF\u64AD\u653E\u7684\u89C6\u9891\u8F68\u9053");
   const duration = Number(data.format?.duration);
@@ -1802,6 +1838,57 @@ function mediaTime(seconds) {
   return (hours ? hours + ":" : "") + [Math.floor(value / 60) % 60, value % 60].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
+// src/media/frame-queue.mjs
+var FrameQueue = class {
+  constructor() {
+    this.chunks = [];
+    this.head = 0;
+    this.offset = 0;
+    this.length = 0;
+  }
+  push(chunk) {
+    if (chunk.length) {
+      this.chunks.push(chunk);
+      this.length += chunk.length;
+    }
+  }
+  read(size) {
+    if (this.length < size) return;
+    const first = this.chunks[this.head];
+    let frame;
+    if (first.length - this.offset >= size) {
+      frame = first.subarray(this.offset, this.offset + size);
+      this.offset += size;
+      if (this.offset === first.length) {
+        this.chunks[this.head++] = void 0;
+        this.offset = 0;
+      }
+    } else {
+      frame = Buffer.allocUnsafe(size);
+      let written = 0;
+      while (written < size) {
+        const chunk = this.chunks[this.head], count = Math.min(size - written, chunk.length - this.offset);
+        chunk.copy(frame, written, this.offset, this.offset + count);
+        written += count;
+        this.offset += count;
+        if (this.offset === chunk.length) {
+          this.chunks[this.head++] = void 0;
+          this.offset = 0;
+        }
+      }
+    }
+    this.length -= size;
+    if (this.head === this.chunks.length) {
+      this.chunks = [];
+      this.head = 0;
+    } else if (this.head > 64) {
+      this.chunks = this.chunks.slice(this.head);
+      this.head = 0;
+    }
+    return frame;
+  }
+};
+
 // src/media/player.mjs
 var PixelPlayer = class {
   constructor({ onFrame = (_frame, _size) => {
@@ -1836,11 +1923,16 @@ var PixelPlayer = class {
     this.emit();
     return this.start(false);
   }
-  resize(columns, rows) {
-    if (columns === this.columns && rows === this.rows) return;
+  resize(columns, rows, filter = this.scaleFilter, force = false) {
+    const changed = columns !== this.columns || rows !== this.rows || filter !== this.scaleFilter;
     this.columns = columns;
     this.rows = rows;
-    if (this.video) return this.start(this.playing);
+    this.scaleFilter = filter;
+    if (this.video && (changed || force)) {
+      const size = this.frameSize(this.video.width, this.video.height, columns, rows);
+      if (!force && this.output === `${size.width}:${size.height}:${filter}`) return;
+      return this.start(this.playing);
+    }
   }
   stop() {
     ++this.generation;
@@ -1886,9 +1978,11 @@ var PixelPlayer = class {
       const binary = await this.binary("ffmpeg"), path = await nativeMediaPath(binary, video.path);
       if (token !== this.generation || this.disposed) return;
       const size = this.frameSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3;
+      this.output = `${size.width}:${size.height}:${this.scaleFilter}`;
       const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=${this.scaleFilter},setsar=1`, ...!playing ? ["-frames:v", "1"] : [], "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"];
       const child = this.decoder = this.launch(binary, args);
-      let buffer = Buffer.alloc(0), stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now();
+      const buffer = new FrameQueue();
+      let stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now();
       let nextFrameAt;
       const valid = () => token === this.generation && !this.disposed;
       const fail = (error) => {
@@ -1902,7 +1996,7 @@ var PixelPlayer = class {
       child.on("error", fail);
       child.stdout.on("data", (chunk) => {
         if (!valid()) return;
-        buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk;
+        buffer.push(chunk);
         if (buffer.length >= frameBytes * 3) child.stdout.pause();
       });
       child.on("close", (code) => {
@@ -1914,12 +2008,12 @@ var PixelPlayer = class {
         if (!valid()) return;
         if (buffer.length >= frameBytes) {
           lastFrameAt = Date.now();
-          nextFrameAt = (nextFrameAt ?? lastFrameAt) + 1e3 / this.fps;
-          const frame = buffer.subarray(0, frameBytes);
-          buffer = buffer.subarray(frameBytes);
+          nextFrameAt = Math.max(nextFrameAt ?? lastFrameAt, lastFrameAt) + 1e3 / this.fps;
+          const frame = buffer.read(frameBytes);
           this.loading = false;
           this.position = Math.min(video.duration, start + frames++ / this.fps);
           this.onFrame(frame, size);
+          if (!valid()) return;
           this.emit();
           if (!audioStarted && playing && !this.muted) {
             audioStarted = true;
@@ -2015,7 +2109,7 @@ var InlineImage = class {
     }
   }
   present(bytes, size) {
-    this.last = { bytes: Buffer.from(bytes), size };
+    this.last = { bytes, size };
     if (this.node && !this.node.isDestroyed) {
       try {
         this.draw(bytes, size);
@@ -2164,7 +2258,9 @@ var MediaCache = class {
       }
     }
   }
-  async open(resource) {
+  /** @param {any} resource @param {{signal?: AbortSignal}} options */
+  async open(resource, { signal } = {}) {
+    signal?.throwIfAborted();
     if (resource.source.adapter === "local-video") return resolveLocalVideo(resource);
     if (resource.kind !== "video" || !resource.metadata.managedMedia) throw new Error("\u89C6\u9891\u5C1A\u672A\u4E0B\u8F7D\uFF0C\u8BF7\u5148\u4ECE\u6765\u6E90\u5BFC\u5165");
     const path = this.path(resource.id), info = await stat3(path);
@@ -2186,10 +2282,13 @@ var MediaCache = class {
       const decipher = createDecipheriv2("aes-256-gcm", await this.library.vault.key(false), header.subarray(8, 20));
       decipher.setAAD(aad2);
       decipher.setAuthTag(header.subarray(20, 36));
-      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }));
-      return { ...await inspectVideo(decoded), id: resource.id, title: resource.title, release };
+      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 384 }), { signal });
+      const video = await inspectVideo(decoded, void 0, { signal });
+      signal?.throwIfAborted();
+      return { ...video, id: resource.id, title: resource.title, release };
     } catch {
       await release();
+      signal?.throwIfAborted();
       throw new Error("\u89C6\u9891\u7F13\u5B58\u65E0\u6CD5\u89E3\u5BC6\u6216\u64AD\u653E\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u53CA\u6587\u4EF6\u5B8C\u6574\u6027\u540E\u91CD\u65B0\u4E0B\u8F7D");
     }
   }
@@ -2240,7 +2339,7 @@ function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1024, ti
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.4.0 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url.origin === initialOrigin ? headers : {} }
+          headers: { "User-Agent": "OpenCode-Moyu/0.4.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...url.origin === initialOrigin ? headers : {} }
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0;
@@ -2581,6 +2680,8 @@ function createVideoReader(api, library, settings) {
     playing: false,
     muted: true,
     loading: false
+  }, {
+    equals: (before, after) => Math.floor(before.position) === Math.floor(after.position) && before.playing === after.playing && before.muted === after.muted && before.loading === after.loading
   });
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
@@ -2603,9 +2704,10 @@ function createVideoReader(api, library, settings) {
     keyFile: library.vault.keyFile
   });
   let downloadAbort;
+  let loadAbort;
   let downloadTask;
   const loads = /* @__PURE__ */ new Set();
-  let token = 0, resizeTimer;
+  let token = 0, restoring = 0, renderKey = "", resizeTimer;
   const colors = /* @__PURE__ */ new Map();
   function color(value) {
     if (!value) return void 0;
@@ -2691,12 +2793,16 @@ function createVideoReader(api, library, settings) {
     return pending;
   }
   async function loadVideo(input, resource) {
+    loadAbort?.abort();
+    const abort = loadAbort = new AbortController();
     const request = ++token;
     setBusy(true);
     setError("");
     pause();
     try {
-      const next = resource ? await sources.cache.open(resource) : await addLocalVideo(library, input, api.state.path.directory);
+      const next = resource ? await sources.cache.open(resource, {
+        signal: abort.signal
+      }) : await addLocalVideo(library, input, api.state.path.directory);
       if (request !== token || api.lifecycle.signal.aborted || !settings.active()) {
         await next.release?.();
         return;
@@ -2712,9 +2818,13 @@ function createVideoReader(api, library, settings) {
       inline.clear();
       settings.activate();
       api.kv.set(prefix + "last", next.id);
+      player.columns = settings.columns();
+      player.rows = settings.rows();
+      player.scaleFilter = useImage() ? "lanczos" : "neighbor";
+      renderKey = useImage() ? protocol() : "pixel";
       await player.load(next, api.kv.get(prefix + next.id, 0));
     } catch (cause) {
-      if (request !== token || api.lifecycle.signal.aborted) return;
+      if (request !== token || abort.signal.aborted || api.lifecycle.signal.aborted) return;
       const message = cause instanceof Error ? cause.message : String(cause);
       setError(message);
       api.ui.toast({
@@ -2723,6 +2833,7 @@ function createVideoReader(api, library, settings) {
         variant: "error"
       });
     } finally {
+      if (loadAbort === abort) loadAbort = void 0;
       if (request === token) setBusy(false);
     }
   }
@@ -3062,10 +3173,11 @@ function createVideoReader(api, library, settings) {
   }
   async function restore() {
     if (video() || busy()) return;
+    const request = ++restoring;
     const id = api.kv.get(prefix + "last", "");
     if (!id) return;
-    const resource = (await library.resources()).find((item) => item.id === id && item.kind === "video");
-    if (resource && !video() && !busy() && settings.active() && !api.lifecycle.signal.aborted) await load("", resource);
+    const resource = await library.resource(id);
+    if (request === restoring && resource?.kind === "video" && !video() && !busy() && settings.active() && !api.lifecycle.signal.aborted) await load("", resource);
   }
   function remove() {
     const current = video();
@@ -3149,34 +3261,38 @@ function createVideoReader(api, library, settings) {
   }
   createEffect(() => {
     const columns = settings.columns(), rows = settings.rows(), active = settings.active();
+    const nextKey = useImage() ? protocol() : "pixel", filter = useImage() ? "lanczos" : "neighbor";
     clearTimeout(resizeTimer);
     if (!active) {
       sourceAbort?.abort();
+      loadAbort?.abort();
+      ++token;
+      ++restoring;
+      setBusy(false);
       untrack(() => {
         pause();
         releaseManaged();
       });
       return;
     }
-    untrack(() => {
-      void restore().catch(showError);
-    });
+    if (nextKey !== renderKey) {
+      renderKey = "";
+      player.stop();
+      inline.clear();
+      setFrame([]);
+    }
     resizeTimer = setTimeout(() => {
-      if (!api.lifecycle.signal.aborted) void player.resize(columns, rows);
-    }, 150);
-  });
-  createEffect(() => {
-    const image = useImage();
-    protocol();
-    player.scaleFilter = image ? "lanczos" : "neighbor";
-    inline.clear();
-    setFrame([]);
-    untrack(() => {
-      if (settings.active() && video()) void player.start(player.playing);
-    });
+      if (api.lifecycle.signal.aborted || !settings.active()) return;
+      const changed = nextKey !== renderKey;
+      renderKey = nextKey;
+      void player.resize(columns, rows, filter, changed);
+      void restore().catch(showError);
+    }, 80);
   });
   async function dispose() {
     ++token;
+    ++restoring;
+    loadAbort?.abort();
     sourceAbort?.abort();
     downloadAbort?.abort();
     resourceWatcher.close();
@@ -3268,16 +3384,16 @@ function createVideoReader(api, library, settings) {
                 var _el$1 = _$createElement("text");
                 _$setProp(_el$1, "selectable", false);
                 _$setProp(_el$1, "wrapMode", "none");
-                _$insert(_el$1, _$createComponent(For, {
+                _$insert(_el$1, _$createComponent(Index, {
                   get each() {
                     return frame();
                   },
                   children: (run) => (() => {
                     var _el$10 = _$createElement("span");
-                    _$insert(_el$10, () => run.text);
+                    _$insert(_el$10, () => run().text);
                     _$effect((_$p) => _$setProp(_el$10, "style", {
-                      fg: run.fg,
-                      bg: run.bg
+                      fg: run().fg,
+                      bg: run().bg
                     }, _$p));
                     return _el$10;
                   })()
@@ -3404,7 +3520,11 @@ var tui = async (api, options) => {
   const minimumRows = () => options?.hostMajor !== 2 && height() < 40 ? 2 : 4;
   const availableRows = createMemo(() => Math.max(minimumRows(), viewportHeight() === void 0 ? height() - (onboarding() ? 31 : 20) : viewportHeight() - chromeRows() - hostRows()));
   const rows = createMemo(() => heightPercent() === void 0 ? Math.min(fixedRows ?? 24, availableRows()) : Math.max(minimumRows(), Math.floor(availableRows() * heightPercent() / 100)));
-  const pages = createMemo(() => paginate(book()?.text ?? "", bodyWidth(), rows()));
+  const paginate = createPaginator();
+  const pages = createMemo((previous) => mode() !== "novel" || !visible() ? previous ?? [{
+    start: 0,
+    text: ""
+  }] : paginate(book()?.text ?? "", bodyWidth(), rows()));
   const page = createMemo(() => pageAt(pages(), offset()));
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "\u6B63\u6587");
   let request = 0;
@@ -3445,7 +3565,6 @@ var tui = async (api, options) => {
     save();
     setMode(next);
     api.kv.set(prefix2 + "mode", next);
-    if (next === "video") void video.restore().catch((error) => toast(String(error), "error"));
   }
   async function open3(path, quiet = false) {
     const token = ++request;

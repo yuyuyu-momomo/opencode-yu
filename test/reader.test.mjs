@@ -4,7 +4,7 @@ import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import stringWidth from "string-width"
-import { chaptersOf, cleanText, decodeBook, loadBook, pageAt, paginate } from "../src/library/text-reader.mjs"
+import { chaptersOf, cleanText, decodeBook, loadBook, pageAt, paginate, createPaginator } from "../src/library/text-reader.mjs"
 
 test("中文、组合字符和 emoji 分页不截断字素，不丢正文", () => {
   const input = "第一章 测试\n\n你好世界 👩‍💻 cafe\u0301，欢迎回来。".repeat(20)
@@ -26,6 +26,19 @@ test("字符偏移可以在窗口尺寸改变后恢复原阅读位置", () => {
   assert.equal(pageAt(old, position), 7)
   assert.equal(pageAt(old, -100), 0)
   assert.equal(pageAt(old, Infinity), old.length - 1)
+})
+
+test("缓存分页复用当前尺寸，调整高度、宽度和换书均保持字素与偏移", () => {
+  const cached = createPaginator()
+  const text = "汉字 e\u0301 👩‍💻 🇨🇳 \n\n".repeat(120)
+  for (const [width, rows] of [[36,16], [36,8], [36,16], [50,16], [36,16]]) {
+    const result = cached(text, width, rows)
+    assert.deepEqual(result, paginate(text, width, rows))
+    assert.equal(cached(text, width, rows), result)
+  }
+  assert.deepEqual(cached("另一本书\n结尾\n", 36, 1), paginate("另一本书\n结尾\n", 36, 1))
+  assert.deepEqual(cached("", 36, 16), [{start:0,text:""}])
+  assert.throws(() => cached(text, 1, 16), /尺寸/)
 })
 
 test("末尾换行不会生成跳转到 100% 仍无法抵达的空白末页", () => {

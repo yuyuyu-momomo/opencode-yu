@@ -69,13 +69,17 @@ export function chaptersOf(text) {
   return chapters
 }
 
-export function paginate(text, width = 36, rows = 16) {
-  if (!Number.isInteger(width) || width < 2 || !Number.isInteger(rows) || rows < 1) throw new Error("分页尺寸无效")
+function wrapLines(text, width) {
   const lines = []
+  const widths = new Map()
   let line = "", columns = 0, start = 0, offset = 0
   for (const paragraph of text.split("\n")) {
     for (const { segment } of segmenter.segment(paragraph)) {
-      const cells = stringWidth(segment)
+      let cells = widths.get(segment)
+      if (cells === undefined) {
+        cells = stringWidth(segment)
+        if (widths.size < 4096) widths.set(segment, cells)
+      }
       if (columns + cells > width && line) {
         lines.push({ text: line, start })
         line = ""
@@ -92,12 +96,39 @@ export function paginate(text, width = 36, rows = 16) {
     line = ""
     columns = 0
   }
+  return lines
+}
+
+function groupPages(lines, rows) {
   const pages = []
   for (let index = 0; index < lines.length; index += rows) {
     pages.push({ start: lines[index].start, text: lines.slice(index, index + rows).map((item) => item.text).join("\n") })
   }
   while (pages.length > 1 && !pages.at(-1).text.trim()) pages.pop()
   return pages
+}
+
+function validSize(width, rows) {
+  if (!Number.isInteger(width) || width < 2 || !Number.isInteger(rows) || rows < 1) throw new Error("分页尺寸无效")
+}
+
+export function paginate(text, width = 36, rows = 16) {
+  validSize(width, rows)
+  return groupPages(wrapLines(text, width), rows)
+}
+
+/** Retain only the current book, one wrapped width and one page grouping. */
+export function createPaginator() {
+  let previousText, previousWidth, previousRows, lines, pages
+  return (text, width = 36, rows = 16) => {
+    validSize(width, rows)
+    if (text !== previousText || width !== previousWidth) {
+      lines = wrapLines(text, width)
+      previousText = text; previousWidth = width; previousRows = undefined
+    }
+    if (rows !== previousRows) { pages = groupPages(lines, rows); previousRows = rows }
+    return pages
+  }
 }
 
 export function pageAt(pages, offset) {

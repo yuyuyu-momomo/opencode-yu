@@ -146,10 +146,18 @@ test("下载结果流式加密、重复复用、播放临时解密、篡改拒�
   assert.deepEqual(await readFile(playable.path),await readFile(fixture))
   await playable.release()
   assert.deepEqual(await readdir(service.cache.playback),[])
+  assert.deepEqual(await service.store.resource(result.resource.id),JSON.parse(JSON.stringify(result.resource)))
+  assert.equal(await service.store.resource('../outside'),undefined)
+  const canceledOpen=new AbortController(), originalKey=service.store.vault.key.bind(service.store.vault)
+  service.store.vault.key=async(...args)=>{const key=await originalKey(...args);canceledOpen.abort();return key}
+  await assert.rejects(service.cache.open(result.resource,{signal:canceledOpen.signal}),{name:'AbortError'})
+  service.store.vault.key=originalKey
+  assert.deepEqual(await readdir(service.cache.playback),[])
   const changed=Buffer.from(bytes);changed[changed.length-1]^=1;await writeFile(service.cache.path(result.resource.id),changed)
   await assert.rejects(service.cache.open(result.resource),/解密或播放/)
   assert.deepEqual(await readdir(service.cache.playback),[])
   await service.store.deleteResource(result.resource.id)
+  assert.equal(await service.store.resource(result.resource.id),undefined)
   assert.deepEqual(await service.store.resources(),[])
   assert.deepEqual(await readdir(service.cache.directory),[])
   assert.ok((await stat(fixture)).isFile())

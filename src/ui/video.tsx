@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { createEffect, createSignal, For, Show, untrack, onCleanup } from "solid-js"
+import { createEffect, createSignal, Index, Show, untrack, onCleanup } from "solid-js"
 import * as OpenTui from "@opentui/core"
 import type { TuiPlugin } from "@opencode-ai/plugin/tui"
 import type { JSX } from "@opentui/solid"
@@ -25,7 +25,9 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
   const [video, setVideo] = createSignal<Video>()
   const [frame, setFrame] = createSignal<Array<{ text: string; fg?: string; bg?: string }>>([])
   const [frameSize, setFrameSize] = createSignal({ width: 1, height: 1 })
-  const [state, setState] = createSignal({ position: 0, playing: false, muted: true, loading: false })
+  const [state, setState] = createSignal({ position: 0, playing: false, muted: true, loading: false }, {
+    equals: (before, after) => Math.floor(before.position) === Math.floor(after.position) && before.playing === after.playing && before.muted === after.muted && before.loading === after.loading,
+  })
   const [error, setError] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [downloadProgress, setDownloadProgress] = createSignal("")
@@ -41,9 +43,10 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
   api.renderer.on("resize", capabilitiesChanged)
   const sources = createVideoIngestion({ directory: library.directory, keyFile: library.vault.keyFile })
   let downloadAbort: AbortController | undefined
+  let loadAbort: AbortController | undefined
   let downloadTask: Promise<void> | undefined
   const loads = new Set<Promise<void>>()
-  let token = 0, resizeTimer: ReturnType<typeof setTimeout> | undefined
+  let token = 0, restoring = 0, renderKey = "", resizeTimer: ReturnType<typeof setTimeout> | undefined
   const colors = new Map<string, string>()
   function color(value?: string) {
     if (!value) return undefined
@@ -93,22 +96,28 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
     return pending
   }
   async function loadVideo(input: string, resource?: any) {
+    loadAbort?.abort()
+    const abort = loadAbort = new AbortController()
     const request = ++token
     setBusy(true); setError(""); pause()
     try {
-      const next: Video = resource ? await sources.cache.open(resource) : await addLocalVideo(library, input, api.state.path.directory)
+      const next: Video = resource ? await sources.cache.open(resource, { signal: abort.signal }) : await addLocalVideo(library, input, api.state.path.directory)
       if (request !== token || api.lifecycle.signal.aborted || !settings.active()) { await next.release?.(); return }
       const previous = video()
       await previous?.release?.()
       if (request !== token || api.lifecycle.signal.aborted || !settings.active()) { await next.release?.(); return }
       setVideo(next); setFrame([]); inline.clear(); settings.activate()
       api.kv.set(prefix + "last", next.id)
+      // The first decode uses the settled viewport, avoiding a second resize decode.
+      player.columns = settings.columns(); player.rows = settings.rows()
+      player.scaleFilter = useImage() ? "lanczos" : "neighbor"
+      renderKey = useImage() ? protocol() : "pixel"
       await player.load(next, api.kv.get<number>(prefix + next.id, 0))
     } catch (cause) {
-      if (request !== token || api.lifecycle.signal.aborted) return
+      if (request !== token || abort.signal.aborted || api.lifecycle.signal.aborted) return
       const message = cause instanceof Error ? cause.message : String(cause)
       setError(message); api.ui.toast({ title: "视频打开失败", message, variant: "error" })
-    } finally { if (request === token) setBusy(false) }
+    } finally { if (loadAbort === abort) loadAbort = undefined; if (request === token) setBusy(false) }
   }
   function prompt() {
     settings.dialog(() => <api.ui.DialogPrompt title="打开视频 · 本地文件" placeholder="例如 /mnt/d/videos/视频.mp4" onCancel={settings.close}
@@ -229,10 +238,11 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
   }
   async function restore() {
     if (video() || busy()) return
+    const request = ++restoring
     const id = api.kv.get<string>(prefix + "last", "")
     if (!id) return
-    const resource = (await library.resources()).find((item) => item.id === id && item.kind === "video")
-    if (resource && !video() && !busy() && settings.active() && !api.lifecycle.signal.aborted) await load("", resource)
+    const resource = await library.resource(id)
+    if (request === restoring && resource?.kind === "video" && !video() && !busy() && settings.active() && !api.lifecycle.signal.aborted) await load("", resource)
   }
   function remove() {
     const current = video()
@@ -265,19 +275,23 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
   }
   createEffect(() => {
     const columns = settings.columns(), rows = settings.rows(), active = settings.active()
+    const nextKey = useImage() ? protocol() : "pixel", filter = useImage() ? "lanczos" : "neighbor"
     clearTimeout(resizeTimer)
-    if (!active) { sourceAbort?.abort(); untrack(() => { pause(); releaseManaged() }); return }
-    untrack(() => { void restore().catch(showError) })
-    resizeTimer = setTimeout(() => { if (!api.lifecycle.signal.aborted) void player.resize(columns, rows) }, 150)
-  })
-  createEffect(() => {
-    const image = useImage(); protocol()
-    player.scaleFilter = image ? "lanczos" : "neighbor"
-    inline.clear(); setFrame([])
-    untrack(() => { if (settings.active() && video()) void player.start(player.playing) })
+    if (!active) {
+      sourceAbort?.abort(); loadAbort?.abort(); ++token; ++restoring; setBusy(false)
+      untrack(() => { pause(); releaseManaged() }); return
+    }
+    // Invalidate even if the user switches back before the coalescing timer fires.
+    if (nextKey !== renderKey) { renderKey = ""; player.stop(); inline.clear(); setFrame([]) }
+    resizeTimer = setTimeout(() => {
+      if (api.lifecycle.signal.aborted || !settings.active()) return
+      const changed = nextKey !== renderKey; renderKey = nextKey
+      void player.resize(columns, rows, filter, changed)
+      void restore().catch(showError)
+    }, 80)
   })
   async function dispose() {
-    ++token; sourceAbort?.abort(); downloadAbort?.abort(); resourceWatcher.close(); clearTimeout(removalTimer); clearInterval(saveTimer); clearTimeout(resizeTimer); save(); player.dispose(); inline.dispose()
+    ++token; ++restoring; loadAbort?.abort(); sourceAbort?.abort(); downloadAbort?.abort(); resourceWatcher.close(); clearTimeout(removalTimer); clearInterval(saveTimer); clearTimeout(resizeTimer); save(); player.dispose(); inline.dispose()
     api.renderer.off("capabilities", capabilitiesChanged); api.renderer.off("resize", capabilitiesChanged)
     await Promise.allSettled([...loads, downloadTask, video()?.release?.()])
   }
@@ -297,7 +311,7 @@ export function createVideoReader(api: API, library: LibraryStore, settings: {
       </box>
       <box height={settings.rows()} flexShrink={0} alignItems="center" justifyContent="center">
         <Show when={video()} fallback={<text>点击「搜索」或「热门」选视频</text>}>
-          <Show when={useImage()} fallback={<text selectable={false} wrapMode="none" width={frameSize().width} height={frameSize().height}><For each={frame()}>{(run) => <span style={{ fg: run.fg, bg: run.bg }}>{run.text}</span>}</For></text>}><ImageSurface /></Show>
+          <Show when={useImage()} fallback={<text selectable={false} wrapMode="none" width={frameSize().width} height={frameSize().height}><Index each={frame()}>{(run) => <span style={{ fg: run().fg, bg: run().bg }}>{run().text}</span>}</Index></text>}><ImageSurface /></Show>
         </Show>
       </box>
       <box height={4 + props.gap} flexShrink={0} paddingTop={props.gap}>

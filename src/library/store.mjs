@@ -43,6 +43,11 @@ export class LibraryStore {
     }
     return out
   }
+  async resource(id) {
+    if (!/^[a-f0-9]{24}$/.test(id)) return
+    try { return await this.vault.unseal(await readFile(join(this.internal, "resources", id + ".enc"))) }
+    catch (error) { if (error.code !== "ENOENT") throw error }
+  }
   async readPart(id, index) { return (await this.vault.unseal(await readFile(this.partPath(id, index)))).text }
   async writeBook(id, title, text) {
     await this.ready()

@@ -192,6 +192,11 @@ try:
     wait_for(lambda s: "[目录]" in s and not list(playback.glob("*/video.mp4")), "temporary-video-cleaned")
     click("[视频]", "cache-resume")
     wait_for(lambda s: has_pixels(s) and "已暂停" in s, "encrypted-video-reopens")
+    for attempt in range(3):
+        click("[小说]", f"switch-{attempt}-novel")
+        wait_for(lambda s: "[目录]" in s and not list(playback.glob("*/video.mp4")), f"switch-{attempt}-cleaned")
+        click("[视频]", f"switch-{attempt}-video")
+        wait_for(lambda s: has_pixels(s) and "已暂停" in s and "[开启声音]" in s, f"switch-{attempt}-restored")
     click("[播放]", "play")
     wait_for(lambda s: "[暂停]" in s and "00:02 /" in s, "video-plays")
     click("[暂停]", "pause")

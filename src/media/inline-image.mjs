@@ -29,7 +29,8 @@ export class InlineImage {
     } catch (error) { this.onError(error) }
   }
   present(bytes, size) {
-    this.last = { bytes: Buffer.from(bytes), size }
+    // Decoder frames are immutable; retain one frame without a second RGB copy.
+    this.last = { bytes, size }
     if (this.node && !this.node.isDestroyed) {
       try { this.draw(bytes, size) } catch (error) { this.onError(error) }
     }

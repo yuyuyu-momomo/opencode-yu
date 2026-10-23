@@ -7,7 +7,7 @@ import { watch } from "node:fs"
 import { access } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { createHash } from "node:crypto"
-import { chaptersOf, expandPath, listBooks, loadBook, pageAt, paginate } from "../library/text-reader.mjs"
+import { chaptersOf, expandPath, listBooks, loadBook, pageAt, createPaginator } from "../library/text-reader.mjs"
 import { LibraryStore } from "../library/store.mjs"
 import { sidebarDock, sidebarLayout } from "./sidebar-layout.mjs"
 import { createVideoReader } from "./video"
@@ -48,7 +48,10 @@ const tui: TuiPlugin = async (api, options) => {
   const rows = createMemo(() => heightPercent() === undefined
     ? Math.min(fixedRows ?? 24, availableRows())
     : Math.max(minimumRows(), Math.floor(availableRows() * heightPercent()! / 100)))
-  const pages = createMemo(() => paginate(book()?.text ?? "", bodyWidth(), rows()))
+  const paginate = createPaginator()
+  const pages = createMemo((previous) => mode() !== "novel" || !visible()
+    ? previous ?? [{ start: 0, text: "" }]
+    : paginate(book()?.text ?? "", bodyWidth(), rows()))
   const page = createMemo(() => pageAt(pages(), offset()))
   const currentChapter = createMemo(() => book()?.chapters.findLast((item) => item.offset <= offset())?.title ?? "正文")
   let request = 0
@@ -79,7 +82,6 @@ const tui: TuiPlugin = async (api, options) => {
     save()
     setMode(next)
     api.kv.set(prefix + "mode", next)
-    if (next === "video") void video.restore().catch((error) => toast(String(error), "error"))
   }
   async function open(path: string, quiet = false) {
     const token = ++request

@@ -35,7 +35,9 @@ export class MediaCache {
       try { process.kill(pid, 0) } catch (error) { if (error.code === "ESRCH") await rm(join(this.playback, entry.name), { recursive: true, force: true }) }
     }
   }
-  async open(resource) {
+  /** @param {any} resource @param {{signal?: AbortSignal}} options */
+  async open(resource, { signal } = {}) {
+    signal?.throwIfAborted()
     if (resource.source.adapter === "local-video") return resolveLocalVideo(resource)
     if (resource.kind !== "video" || !resource.metadata.managedMedia) throw new Error("视频尚未下载，请先从来源导入")
     const path = this.path(resource.id), info = await stat(path)
@@ -52,10 +54,13 @@ export class MediaCache {
     try {
       const decipher = createDecipheriv("aes-256-gcm", await this.library.vault.key(false), header.subarray(8, 20))
       decipher.setAAD(aad); decipher.setAuthTag(header.subarray(20, 36))
-      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 0o600 }))
-      return { ...await inspectVideo(decoded), id: resource.id, title: resource.title, release }
+      await pipeline(createReadStream(path, { start: 36 }), decipher, createWriteStream(decoded, { flags: "wx", mode: 0o600 }), { signal })
+      const video = await inspectVideo(decoded, undefined, { signal })
+      signal?.throwIfAborted()
+      return { ...video, id: resource.id, title: resource.title, release }
     } catch {
       await release()
+      signal?.throwIfAborted()
       throw new Error("视频缓存无法解密或播放，请检查密钥及文件完整性后重新下载")
     }
   }

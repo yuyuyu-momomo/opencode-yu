@@ -50,7 +50,7 @@ export function createHttpClient({ allowPrivate = false, maxBytes = 2 * 1024 * 1
           signal,
           agent,
           lookup: (_host, options, callback) => options?.all ? callback(null, [pinned]) : callback(null, pinned.address, pinned.family),
-          headers: { "User-Agent": "OpenCode-Moyu/0.4.0 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...(url.origin === initialOrigin ? headers : {}) },
+          headers: { "User-Agent": "OpenCode-Moyu/0.4.1 (+local reading library)", Accept: "text/html,text/plain;q=0.9", "Accept-Encoding": "gzip, br, deflate", ...(url.origin === initialOrigin ? headers : {}) },
         }, async (response) => {
           try {
             const status = response.statusCode ?? 0

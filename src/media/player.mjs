@@ -1,5 +1,6 @@
 import { mediaBinary, nativeMediaPath, launchMedia, stopMedia } from "./runtime.mjs"
 import { pixelSize } from "./pixels.mjs"
+import { FrameQueue } from "./frame-queue.mjs"
 
 /** Decoder owns no UI or files. One bounded frame queue, no full-video conversion. */
 export class PixelPlayer {
@@ -19,10 +20,15 @@ export class PixelPlayer {
     this.emit()
     return this.start(false)
   }
-  resize(columns, rows) {
-    if (columns === this.columns && rows === this.rows) return
+  resize(columns, rows, filter = this.scaleFilter, force = false) {
+    const changed = columns !== this.columns || rows !== this.rows || filter !== this.scaleFilter
     this.columns = columns; this.rows = rows
-    if (this.video) return this.start(this.playing)
+    this.scaleFilter = filter
+    if (this.video && (changed || force)) {
+      const size = this.frameSize(this.video.width, this.video.height, columns, rows)
+      if (!force && this.output === `${size.width}:${size.height}:${filter}`) return
+      return this.start(this.playing)
+    }
   }
   stop() {
     ++this.generation; clearTimeout(this.timer)
@@ -55,9 +61,11 @@ export class PixelPlayer {
       const binary = await this.binary("ffmpeg"), path = await nativeMediaPath(binary, video.path)
       if (token !== this.generation || this.disposed) return
       const size = this.frameSize(video.width, video.height, this.columns, this.rows), frameBytes = size.width * size.height * 3
+      this.output = `${size.width}:${size.height}:${this.scaleFilter}`
       const args = ["-nostdin", "-hide_banner", "-loglevel", "error", "-threads", "1", "-filter_threads", "1", "-protocol_whitelist", "file,pipe", "-ss", String(start), "-i", path, "-map", "0:v:0", "-an", "-sn", "-vf", `fps=${this.fps},scale=${size.width}:${size.height}:flags=${this.scaleFilter},setsar=1`, ...(!playing ? ["-frames:v", "1"] : []), "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"]
       const child = this.decoder = this.launch(binary, args)
-      let buffer = Buffer.alloc(0), stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now()
+      const buffer = new FrameQueue()
+      let stderr = "", ended = false, exitCode, frames = 0, audioStarted = false, lastFrameAt = Date.now()
       let nextFrameAt
       const valid = () => token === this.generation && !this.disposed
       const fail = (error) => { if (!valid()) return; this.pause(); this.onError(error instanceof Error ? error.message : String(error)) }
@@ -65,7 +73,7 @@ export class PixelPlayer {
       child.on("error", fail)
       child.stdout.on("data", (chunk) => {
         if (!valid()) return
-        buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk
+        buffer.push(chunk)
         if (buffer.length >= frameBytes * 3) child.stdout.pause()
       })
       child.on("close", (code) => { ended = true; exitCode = code; if (code && valid()) fail(new Error(`视频解码失败：${stderr || code}`)) })
@@ -73,10 +81,12 @@ export class PixelPlayer {
         if (!valid()) return
         if (buffer.length >= frameBytes) {
           lastFrameAt = Date.now()
-          nextFrameAt = (nextFrameAt ?? lastFrameAt) + 1000 / this.fps
-          const frame = buffer.subarray(0, frameBytes); buffer = buffer.subarray(frameBytes)
+          nextFrameAt = Math.max(nextFrameAt ?? lastFrameAt, lastFrameAt) + 1000 / this.fps
+          const frame = buffer.read(frameBytes)
           this.loading = false; this.position = Math.min(video.duration, start + frames++ / this.fps)
-          this.onFrame(frame, size); this.emit()
+          this.onFrame(frame, size)
+          if (!valid()) return
+          this.emit()
           if (!audioStarted && playing && !this.muted) { audioStarted = true; void this.startAudio(video, start, token) }
           if (buffer.length < frameBytes * 3) child.stdout.resume()
           if (!playing) { this.stop(); return }

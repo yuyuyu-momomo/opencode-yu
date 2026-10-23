@@ -35,14 +35,15 @@ export async function nativeMediaPath(binary, path) {
   return path
 }
 
-/** Local resolver is separate from future HTTP download/cache adapters. */
-export async function inspectVideo(input, cwd) {
+/** @param {string} input @param {string} [cwd] @param {{signal?: AbortSignal}} options */
+export async function inspectVideo(input, cwd, { signal } = {}) {
+  signal?.throwIfAborted()
   if (/^[a-z]+:\/\//i.test(input.trim())) throw new Error("首版支持本地视频，请输入文件路径")
   const path = await realpath(expandPath(input, cwd))
   const info = await stat(path)
   if (!info.isFile() || !/\.(mp4|mkv|webm|mov|avi|m4v|mpeg|mpg|gif)$/i.test(path)) throw new Error("请选择 MP4、MKV、WebM、MOV、AVI 或 GIF 视频文件")
   const binary = await mediaBinary("ffprobe")
-  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15000, maxBuffer: 256 * 1024, windowsHide: true })
+  const { stdout } = await execute(binary, ["-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "stream=codec_type,width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", await nativeMediaPath(binary, path)], { timeout: 15000, maxBuffer: 256 * 1024, windowsHide: true, signal })
   const data = JSON.parse(stdout), video = data.streams?.find((stream) => stream.codec_type === "video")
   if (!video?.width || !video.height) throw new Error("文件没有可播放的视频轨道")
   const duration = Number(data.format?.duration)
